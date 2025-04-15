@@ -23,6 +23,7 @@ COPY chroot.sh /chroot.sh
 # RUN chmod +x /chroot.sh
 RUN apk update \
   && apk upgrade \
+  && chmod +x /chroot.sh \
   && /chroot.sh
 
 FROM alpine:3.21
