@@ -58,7 +58,7 @@ ifneq ($(PLATFORM),)
 	PLATFORM_FLAG="--platform"
 endif
 
-REGISTRY ?= registry.cn-hangzhou.aliyuncs.com/testwydimage
+REGISTRY = registry.cn-hangzhou.aliyuncs.com/testwydimage
 
 BASE_IMAGE ?= $(shell cat NGINX_BASE)
 
