@@ -403,11 +403,11 @@ func (n *NGINXController) CheckIngress(ing *networking.Ingress) error {
 	startTest := time.Now().UnixNano() / 1000000
 	_, servers, pcfg := n.getConfiguration(ings)
 
-	err = checkOverlap(ing, servers)
-	if err != nil {
-		n.metricCollector.IncCheckErrorCount(ing.ObjectMeta.Namespace, ing.Name)
-		return err
-	}
+	//err = checkOverlap(ing, servers)
+	//if err != nil {
+	//	n.metricCollector.IncCheckErrorCount(ing.ObjectMeta.Namespace, ing.Name)
+	//	return err
+	//}
 	testedSize := len(ings)
 	if n.cfg.DisableFullValidationTest {
 		_, _, pcfg = n.getConfiguration(ings[len(ings)-1:])
