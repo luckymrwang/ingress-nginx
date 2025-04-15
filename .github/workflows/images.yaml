@@ -185,9 +185,9 @@ jobs:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
-          registry: ${{ secrets.ALIYUN_REGISTRY_URL }}
-          username: ${{ secrets.ALIYUN_USERNAME }}
-          password: ${{ secrets.ALIYUN_PASSWORD }}
+          registry: registry.cn-hangzhou.aliyuncs.com
+          username: ${{ secrets.USERNAME_ALI }}
+          password: ${{ secrets.PASSWORD_ALI }}
       - name: build-image
         run: |
           export TAG=$(cat images/nginx/TAG)
