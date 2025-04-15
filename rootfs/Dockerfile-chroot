@@ -18,9 +18,9 @@ FROM ${BASE_IMAGE} AS chroot
 
 # This intermediary image will be used only to copy all the required files to the chroot
 # TODO: Simplify in a future to a single Dockerfile
-RUN chmod +x chroot.sh
+# RUN chmod +x chroot.sh
 COPY chroot.sh /chroot.sh
-RUN chmod +x /chroot.sh
+# RUN chmod +x /chroot.sh
 RUN apk update \
   && apk upgrade \
   && /chroot.sh
