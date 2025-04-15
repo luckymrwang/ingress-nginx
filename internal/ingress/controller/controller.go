@@ -40,7 +40,7 @@ import (
 	ngx_config "k8s.io/ingress-nginx/internal/ingress/controller/config"
 	"k8s.io/ingress-nginx/internal/ingress/controller/ingressclass"
 	"k8s.io/ingress-nginx/internal/ingress/controller/store"
-	"k8s.io/ingress-nginx/internal/ingress/errors"
+	//"k8s.io/ingress-nginx/internal/ingress/errors"
 	"k8s.io/ingress-nginx/internal/ingress/inspector"
 	"k8s.io/ingress-nginx/internal/ingress/metric/collectors"
 	"k8s.io/ingress-nginx/internal/k8s"
