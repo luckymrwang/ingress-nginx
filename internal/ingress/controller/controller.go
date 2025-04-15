@@ -401,7 +401,7 @@ func (n *NGINXController) CheckIngress(ing *networking.Ingress) error {
 		ParsedAnnotations: parsed,
 	})
 	startTest := time.Now().UnixNano() / 1000000
-	_, servers, pcfg := n.getConfiguration(ings)
+	_, _, pcfg := n.getConfiguration(ings)
 
 	//err = checkOverlap(ing, servers)
 	//if err != nil {
@@ -1821,6 +1821,7 @@ func checkOverlap(ing *networking.Ingress, ingresses []*ingress.Ingress, servers
 			}
 
 			// path overlap. Check if one of the ingresses has a canary annotation
+			/*
 			isCanaryEnabled, annotationErr := parser.GetBoolAnnotation("canary", ing)
 			for _, existing := range existingIngresses {
 				if existing.ObjectMeta.Namespace == ing.ObjectMeta.Namespace && existing.ObjectMeta.Name == ing.ObjectMeta.Name {
@@ -1837,6 +1838,7 @@ func checkOverlap(ing *networking.Ingress, ingresses []*ingress.Ingress, servers
 					return fmt.Errorf(`host "%s" and path "%s" is already defined in ingress %s/%s`, rule.Host, path.Path, existing.Namespace, existing.Name)
 				}
 			}
+                       */
 		}
 	}
 
