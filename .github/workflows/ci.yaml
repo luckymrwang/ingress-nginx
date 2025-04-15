@@ -197,8 +197,8 @@ jobs:
           echo "creating images cache..."
           docker save \
             nginx-ingress-controller:e2e \
-            ingress-controller/controller:1.0.0-dev \
-            ingress-controller/controller-chroot:1.0.0-dev \
+            ${env.REGISTRY}/controller:1.0.0-dev \
+            ${env.REGISTRY}/controller-chroot:1.0.0-dev \
             | gzip > docker.tar.gz
 
       - name: cache
