@@ -185,6 +185,11 @@ jobs:
      
       - name: Fix run-in-docker.sh permission
         run: chmod +x build/run-in-docker.sh
+
+      - name: Fix run-in-build.sh.sh permission
+        run: chmod +x build/build.sh
+
+        
         
       - name: Build images
         env:
