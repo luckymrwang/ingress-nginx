@@ -182,7 +182,10 @@ jobs:
         run: |
             export TAG=$(cat images/nginx/TAG)
             cd images/nginx/rootfs && docker buildx build --platform=${{ env.PLATFORMS }} --load -t registry.k8s.io/ingress-nginx/nginx:${TAG} .
-
+     
+      - name: Fix run-in-docker.sh permission
+        run: chmod +x build/run-in-docker.sh
+        
       - name: Build images
         env:
           TAG: 1.0.0-dev
