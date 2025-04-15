@@ -188,8 +188,7 @@ jobs:
 
       - name: Fix run-in-build.sh.sh permission
         run: chmod +x build/build.sh
-      - name: Fix run-in-build.sh.sh permission
-        run: chmod +x chroot.sh
+
         
 
 
