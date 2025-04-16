@@ -119,5 +119,5 @@ jobs:
 
       - name: push images
         run: |
-          docker push  ${env.REGISTRY}/controller:1.0.0-dev
-          docker push  ${env.REGISTRY}/controller-chroot:1.0.0-dev
+          docker push  ${{env.REGISTRY}}/controller:1.0.0-dev
+          docker push  ${{env.REGISTRY}}/controller-chroot:1.0.0-dev
