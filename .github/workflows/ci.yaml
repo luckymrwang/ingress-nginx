@@ -34,50 +34,9 @@ permissions:
 
 jobs:
 
-  changes:
-    permissions:
-      contents: read  # for dorny/paths-filter to fetch a list of changed files
-      pull-requests: read  # for dorny/paths-filter to read pull requests
-    runs-on: ubuntu-latest
-    outputs:
-      go: ${{ steps.filter.outputs.go }}
-      charts: ${{ steps.filter.outputs.charts }}
-      baseimage: ${{ steps.filter.outputs.baseimage }}
-
-    steps:
-
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
-        id: filter
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          filters: |
-            go:
-              - '**/*.go'
-              - 'go.mod'
-              - 'go.sum'
-              - 'rootfs/**/*'
-              - 'TAG'
-              - 'test/e2e/**/*'
-              - 'NGINX_BASE'
-            charts:
-              - 'charts/ingress-nginx/Chart.yaml'
-              - 'charts/ingress-nginx/**/*'
-              - 'NGINX_BASE'
-            baseimage:
-              - 'NGINX_BASE'
-              - 'images/nginx/**'
-            docs:
-              - '**/*.md'
-            lua:
-              - '**/*.lua'
-
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: changes
     outputs:
       golangversion: ${{ steps.golangversion.outputs.version }}
     if: |
