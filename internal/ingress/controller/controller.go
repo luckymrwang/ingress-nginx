@@ -40,7 +40,7 @@ import (
 	ngx_config "k8s.io/ingress-nginx/internal/ingress/controller/config"
 	"k8s.io/ingress-nginx/internal/ingress/controller/ingressclass"
 	"k8s.io/ingress-nginx/internal/ingress/controller/store"
-	//"k8s.io/ingress-nginx/internal/ingress/errors"
+	"k8s.io/ingress-nginx/internal/ingress/errors"
 	"k8s.io/ingress-nginx/internal/ingress/inspector"
 	"k8s.io/ingress-nginx/internal/ingress/metric/collectors"
 	"k8s.io/ingress-nginx/internal/k8s"
@@ -401,13 +401,13 @@ func (n *NGINXController) CheckIngress(ing *networking.Ingress) error {
 		ParsedAnnotations: parsed,
 	})
 	startTest := time.Now().UnixNano() / 1000000
-	_, _, pcfg := n.getConfiguration(ings)
+	_, servers, pcfg := n.getConfiguration(ings)
 
-	//err = checkOverlap(ing, servers)
-	//if err != nil {
-	//	n.metricCollector.IncCheckErrorCount(ing.ObjectMeta.Namespace, ing.Name)
-	//	return err
-	//}
+	err = checkOverlap(ing, servers)
+	if err != nil {
+		n.metricCollector.IncCheckErrorCount(ing.ObjectMeta.Namespace, ing.Name)
+		return err
+	}
 	testedSize := len(ings)
 	if n.cfg.DisableFullValidationTest {
 		_, _, pcfg = n.getConfiguration(ings[len(ings)-1:])
@@ -1792,7 +1792,7 @@ func externalNamePorts(name string, svc *apiv1.Service) *apiv1.ServicePort {
 	}
 }
 
-func checkOverlap(ing *networking.Ingress, ingresses []*ingress.Ingress, servers []*ingress.Server) error {
+func checkOverlap(ing *networking.Ingress, servers []*ingress.Server) error {
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
 			continue
@@ -1821,15 +1821,13 @@ func checkOverlap(ing *networking.Ingress, ingresses []*ingress.Ingress, servers
 			}
 
 			// path overlap. Check if one of the ingresses has a canary annotation
-			/*
-			isCanaryEnabled, annotationErr := parser.GetBoolAnnotation("canary", ing)
+			isCanaryEnabled, annotationErr := parser.GetBoolAnnotation("canary", ing, canary.CanaryAnnotations.Annotations)
 			for _, existing := range existingIngresses {
 				if existing.ObjectMeta.Namespace == ing.ObjectMeta.Namespace && existing.ObjectMeta.Name == ing.ObjectMeta.Name {
 					continue
 				}
 
-				isExistingCanaryEnabled, existingAnnotationErr := parser.GetBoolAnnotation("canary", existing)
-
+				isExistingCanaryEnabled, existingAnnotationErr := parser.GetBoolAnnotation("canary", existing, canary.CanaryAnnotations.Annotations)
 				if isCanaryEnabled && isExistingCanaryEnabled {
 					return fmt.Errorf(`host "%s" and path "%s" is already defined in ingress %s/%s`, rule.Host, path.Path, existing.Namespace, existing.Name)
 				}
@@ -1838,7 +1836,6 @@ func checkOverlap(ing *networking.Ingress, ingresses []*ingress.Ingress, servers
 					return fmt.Errorf(`host "%s" and path "%s" is already defined in ingress %s/%s`, rule.Host, path.Path, existing.Namespace, existing.Name)
 				}
 			}
-                       */
 		}
 	}
 
