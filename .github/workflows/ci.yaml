@@ -105,15 +105,4 @@ jobs:
         run: |
           echo "building images..."
           export TAGNGINX=$(cat images/nginx/TAG)
-          make BASE_IMAGE=registry.k8s.io/ingress-nginx/nginx:${TAGNGINX} clean-image build image image-chroot
-          make -C test/e2e-image image
-
-          echo "creating images cache..."
-          docker save \
-            nginx-ingress-controller:e2e \
-            registry.cn-hangzhou.aliyuncs.com/testwydimage/controller:1.0.0-dev \
-            registry.cn-hangzhou.aliyuncs.com/testwydimage/controller-chroot:1.0.0-dev \
-            | gzip > docker.tar.gz
-
-          docker push  registry.cn-hangzhou.aliyuncs.com/testwydimage/controller:1.0.0-dev
-          docker push  registry.cn-hangzhou.aliyuncs.com/testwydimage/controller-chroot:1.0.0-dev
+          make BASE_IMAGE=registry.k8s.io/ingress-nginx/nginx:${TAGNGINX} clean-image build release 
