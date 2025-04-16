@@ -91,7 +91,9 @@ jobs:
       - name: Fix run-in-build.sh.sh permission
         run: chmod +x build/build.sh
 
-        
+      - name: login hub.docker
+        run: |
+           docker login --username=${{ secrets.USERNAME_ALI }} registry.cn-hangzhou.aliyuncs.com -p ${{ secrets.PASSWORD_ALI }}        
 
 
         
@@ -113,11 +115,5 @@ jobs:
             registry.cn-hangzhou.aliyuncs.com/testwydimage/controller-chroot:1.0.0-dev \
             | gzip > docker.tar.gz
 
-      - name: login hub.docker
-        run: |
-           docker login --username=${{ secrets.USERNAME_ALI }} registry.cn-hangzhou.aliyuncs.com -p ${{ secrets.PASSWORD_ALI }}
-
-      - name: push images
-        run: |
           docker push  registry.cn-hangzhou.aliyuncs.com/testwydimage/controller:1.0.0-dev
           docker push  registry.cn-hangzhou.aliyuncs.com/testwydimage/controller-chroot:1.0.0-dev
