@@ -256,7 +256,6 @@ release: builder clean
 		--no-cache \
 		$(MAC_DOCKER_FLAGS) \
 		--push \
-		--pull \
 		--progress plain \
 		--platform $(BUILDX_PLATFORMS) \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
@@ -269,7 +268,6 @@ release: builder clean
 		--no-cache \
 		$(MAC_DOCKER_FLAGS) \
 		--push \
-		--pull \
 		--progress plain \
 		--platform $(BUILDX_PLATFORMS)  \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
