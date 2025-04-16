@@ -242,8 +242,8 @@ show-version:
 	echo -n $(TAG)
 
 BUILDER ?= ingress-nginx
-PLATFORMS ?= amd64 arm arm64
-BUILDX_PLATFORMS ?= amd64,arm,arm64
+PLATFORMS = amd64 arm arm64
+BUILDX_PLATFORMS = amd64,arm,arm64
 
 .PHONY: release # Build a multi-arch docker image
 release: 
