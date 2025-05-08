@@ -10,8 +10,7 @@ assignees: ''
 <!--
 
 Welcome to ingress-nginx!  For a smooth issue process, try to answer the following questions.
-Don't worry if they're not all applicable; just try to include what you can :-).
-More info helps better understanding of the issue (needless to say).
+Don't worry if they're not all applicable; just try to include what you can :-)
 
 If you need to include code snippets or logs, please put them in fenced code
 blocks.  If they're super-long, please use the details tag like
@@ -28,16 +27,7 @@ This questions are the first thing we need to know to understand the context.
 
 -->
 
-**What happened**:
-
-<!-- (please include exact error messages if you can) -->
-
-**What you expected to happen**:
-
-<!-- What do you think went wrong? -->
-
-
-**NGINX Ingress controller version** (exec into the pod and run `/nginx-ingress-controller --version`):
+**NGINX Ingress controller version** (exec into the pod and run nginx-ingress-controller --version.):
 <!--
 POD_NAMESPACE=ingress-nginx
 POD_NAME=$(kubectl get pods -n $POD_NAMESPACE -l app.kubernetes.io/name=ingress-nginx --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
@@ -60,7 +50,7 @@ kubectl exec -it $POD_NAME -n $POD_NAMESPACE -- /nginx-ingress-controller --vers
 
 - **How was the ingress-nginx-controller installed**:
   - If helm was used then please show output of `helm ls -A | grep -i ingress`
-  - If helm was used then please show output of `helm -n <ingresscontrollernamespace> get values <helmreleasename>`
+  - If helm was used then please show output of `helm -n <ingresscontrollernamepspace> get values <helmreleasename>`
   - If helm was not used, then copy/paste the complete precise command used to install the controller, along with the flags and options used
   - if you have more than one instance of the ingress-nginx-controller installed in the same cluster, please provide details for all the instances
 
@@ -71,7 +61,7 @@ kubectl exec -it $POD_NAME -n $POD_NAMESPACE -- /nginx-ingress-controller --vers
   - `kubectl -n <ingresscontrollernamespace> describe svc <ingresscontrollerservicename>`
 
 - **Current state of ingress object, if applicable**:
-  - `kubectl -n <appnamespace> get all,ing -o wide`
+  - `kubectl -n <appnnamespace> get all,ing -o wide`
   - `kubectl -n <appnamespace> describe ing <ingressname>`
   - If applicable, then, your complete and exact curl/grpcurl command (redacted if required) and the reponse to the curl/grpcurl command with the -v flag
 
@@ -81,8 +71,15 @@ kubectl exec -it $POD_NAME -n $POD_NAMESPACE -- /nginx-ingress-controller --vers
     - `kubectl describe ...` of any custom configmap(s) created and in use
     - Any other related information that may help
 
+**What happened**:
 
-**How to reproduce this issue**:
+<!-- (please include exact error messages if you can) -->
+
+**What you expected to happen**:
+
+<!-- What do you think went wrong? -->
+
+**How to reproduce it**:
 <!---
 
 As minimally and precisely as possible. Keep in mind we do not have access to your cluster or application.
