@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	ngconfparser "github.com/tufanbarisyildirim/gonginx/parser"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-nginx/internal/ingress"
@@ -334,11 +335,16 @@ func (n *NGINXController) CheckIngress(ing *networking.Ingress) error {
 		return err
 	}
 
-	err = n.testTemplate(content)
+	/*Deactivated to mitigate CVE-2025-1974*/
+	/*use pure go to check nginx.conf instead of  nginx -t --start*/
+	ngconfparserInstance := ngconfparser.NewStringParser(string(content))
+	_, err = ngconfparserInstance.Parse()
 	if err != nil {
-		n.metricCollector.IncCheckErrorCount(ing.ObjectMeta.Namespace, ing.Name)
+		n.metricCollector.IncCheckErrorCount(ing.Namespace, ing.Name)
 		return err
 	}
+	/*use pure go to check nginx.conf instead of  nginx -t  --end*/
+
 	n.metricCollector.IncCheckCount(ing.ObjectMeta.Namespace, ing.Name)
 	endCheck := time.Now().UnixNano() / 1000000
 	n.metricCollector.SetAdmissionMetrics(
