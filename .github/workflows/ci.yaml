@@ -110,12 +110,6 @@ jobs:
             ingress-controller/controller-chroot:1.0.0-dev \
             | pigz > docker.tar.gz
 
-      - name: cache
-        uses: actions/upload-artifact@82c141cc518b40d92cc801eee768e7aafc9c2fa2 # v2
-        with:
-          name: docker.tar.gz
-          path: docker.tar.gz
-
   helm:
     name: Helm chart
     runs-on: ubuntu-latest
