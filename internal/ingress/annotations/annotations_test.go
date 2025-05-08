@@ -39,24 +39,20 @@ var (
 	annotationCorsExposeHeaders      = parser.GetAnnotationWithPrefix("cors-expose-headers")
 	annotationCorsAllowCredentials   = parser.GetAnnotationWithPrefix("cors-allow-credentials")
 	defaultCorsMethods               = "GET, PUT, POST, DELETE, PATCH, OPTIONS"
-	defaultCorsHeaders               = "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+	defaultCorsHeaders               = "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
 	annotationAffinityCookieName     = parser.GetAnnotationWithPrefix("session-cookie-name")
 	annotationUpstreamHashBy         = parser.GetAnnotationWithPrefix("upstream-hash-by")
 	annotationCustomHTTPErrors       = parser.GetAnnotationWithPrefix("custom-http-errors")
-	annotationCustomHeaders          = parser.GetAnnotationWithPrefix("custom-headers")
 )
 
 type mockCfg struct {
 	resolver.Mock
-	MockSecrets    map[string]*apiv1.Secret
-	MockServices   map[string]*apiv1.Service
-	MockConfigMaps map[string]*apiv1.ConfigMap
+	MockSecrets  map[string]*apiv1.Secret
+	MockServices map[string]*apiv1.Service
 }
 
 func (m mockCfg) GetDefaultBackend() defaults.Backend {
-	return defaults.Backend{
-		AllowedResponseHeaders: []string{"Content-Type"},
-	}
+	return defaults.Backend{}
 }
 
 func (m mockCfg) GetSecret(name string) (*apiv1.Secret, error) {
@@ -67,16 +63,8 @@ func (m mockCfg) GetService(name string) (*apiv1.Service, error) {
 	return m.MockServices[name], nil
 }
 
-func (m mockCfg) GetConfigMap(name string) (*apiv1.ConfigMap, error) {
-	return m.MockConfigMaps[name], nil
-}
-
 func (m mockCfg) GetAuthCertificate(name string) (*resolver.AuthSSLCert, error) {
-	secret, err := m.GetSecret(name)
-	if err != nil {
-		return nil, err
-	}
-	if secret != nil {
+	if secret, _ := m.GetSecret(name); secret != nil {
 		return &resolver.AuthSSLCert{
 			Secret:     name,
 			CAFileName: "/opt/ca.pem",
@@ -133,7 +121,6 @@ func TestSSLPassthrough(t *testing.T) {
 	ec := NewAnnotationExtractor(mockCfg{})
 	ing := buildIngress()
 
-	//nolint:goconst //already a constant
 	fooAnns := []struct {
 		annotations map[string]string
 		er          bool
@@ -147,11 +134,8 @@ func TestSSLPassthrough(t *testing.T) {
 
 	for _, foo := range fooAnns {
 		ing.SetAnnotations(foo.annotations)
-		r, err := ec.Extract(ing)
-		if err != nil {
-			t.Errorf("Errors should be null: %v", err)
-		}
-		if r.SSLPassthrough != foo.er {
+		r := ec.Extract(ing).SSLPassthrough
+		if r != foo.er {
 			t.Errorf("Returned %v but expected %v", r, foo.er)
 		}
 	}
@@ -174,11 +158,8 @@ func TestUpstreamHashBy(t *testing.T) {
 
 	for _, foo := range fooAnns {
 		ing.SetAnnotations(foo.annotations)
-		r, err := ec.Extract(ing)
-		if err != nil {
-			t.Errorf("error should be null: %v", err)
-		}
-		if r.UpstreamHashBy.UpstreamHashBy != foo.er {
+		r := ec.Extract(ing).UpstreamHashBy.UpstreamHashBy
+		if r != foo.er {
 			t.Errorf("Returned %v but expected %v", r, foo.er)
 		}
 	}
@@ -204,11 +185,7 @@ func TestAffinitySession(t *testing.T) {
 
 	for _, foo := range fooAnns {
 		ing.SetAnnotations(foo.annotations)
-		rann, err := ec.Extract(ing)
-		if err != nil {
-			t.Errorf("error should be null: %v", err)
-		}
-		r := rann.SessionAffinity
+		r := ec.Extract(ing).SessionAffinity
 		t.Logf("Testing pass %v %v", foo.affinitytype, foo.cookiename)
 
 		if r.Type != foo.affinitytype {
@@ -251,11 +228,7 @@ func TestCors(t *testing.T) {
 
 	for _, foo := range fooAnns {
 		ing.SetAnnotations(foo.annotations)
-		rann, err := ec.Extract(ing)
-		if err != nil {
-			t.Errorf("error should be null: %v", err)
-		}
-		r := rann.CorsConfig
+		r := ec.Extract(ing).CorsConfig
 		t.Logf("Testing pass %v %v %v %v %v", foo.corsenabled, foo.methods, foo.headers, foo.origin, foo.credentials)
 
 		if r.CorsEnabled != foo.corsenabled {
@@ -283,9 +256,9 @@ func TestCors(t *testing.T) {
 		if r.CorsAllowCredentials != foo.credentials {
 			t.Errorf("Returned %v but expected %v for Cors Credentials", r.CorsAllowCredentials, foo.credentials)
 		}
+
 	}
 }
-
 func TestCustomHTTPErrors(t *testing.T) {
 	ec := NewAnnotationExtractor(mockCfg{})
 	ing := buildIngress()
@@ -304,11 +277,7 @@ func TestCustomHTTPErrors(t *testing.T) {
 
 	for _, foo := range fooAnns {
 		ing.SetAnnotations(foo.annotations)
-		rann, err := ec.Extract(ing)
-		if err != nil {
-			t.Errorf("error should be null: %v", err)
-		}
-		r := rann.CustomHTTPErrors
+		r := ec.Extract(ing).CustomHTTPErrors
 
 		// Check that expected codes were created
 		for i := range foo.er {
@@ -321,47 +290,6 @@ func TestCustomHTTPErrors(t *testing.T) {
 		for i := range r {
 			if r[i] != foo.er[i] {
 				t.Errorf("Returned %v but expected %v", r, foo.er)
-			}
-		}
-	}
-}
-
-func TestCustomResponseHeaders(t *testing.T) {
-	mockObj := mockCfg{}
-	mockObj.MockConfigMaps = map[string]*apiv1.ConfigMap{}
-	mockObj.MockConfigMaps["custom-headers"] = &apiv1.ConfigMap{Data: map[string]string{"Content-Type": "application/json"}}
-	mockObj.MockConfigMaps["empty-custom-headers"] = &apiv1.ConfigMap{Data: map[string]string{}}
-
-	ec := NewAnnotationExtractor(mockObj)
-	ing := buildIngress()
-	fooAnns := []struct {
-		annotations map[string]string
-		headers     map[string]string
-	}{
-		{map[string]string{annotationCustomHeaders: "custom-headers"}, map[string]string{"Content-Type": "application/json"}},
-		{map[string]string{annotationCustomHeaders: "empty-custom-headers"}, map[string]string{}},
-		{nil, map[string]string{}},
-	}
-
-	for _, foo := range fooAnns {
-		ing.SetAnnotations(foo.annotations)
-		rann, err := ec.Extract(ing)
-		if err != nil {
-			t.Errorf("error should be null: %v", err)
-		}
-		r := rann.CustomHeaders.Headers
-
-		// Check that expected headers were created
-		for i := range foo.headers {
-			if r[i] != foo.headers[i] {
-				t.Errorf("Returned %v but expected %v", r, foo.headers)
-			}
-		}
-
-		// Check that no unexpected headers were created
-		for i := range r {
-			if r[i] != foo.headers[i] {
-				t.Errorf("Returned %v but expected %v", r, foo.headers)
 			}
 		}
 	}

@@ -17,9 +17,10 @@ limitations under the License.
 package settings
 
 import (
+	"fmt"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 
 	"k8s.io/ingress-nginx/test/e2e/framework"
 )
@@ -33,7 +34,7 @@ var _ = framework.DescribeSetting("Add no tls redirect locations", func() {
 		f.EnsureIngress(ing)
 
 		f.WaitForNginxConfiguration(func(server string) bool {
-			return strings.Contains(server, "set $force_no_ssl_redirect \"false\"")
+			return !strings.Contains(server, fmt.Sprintf("force_no_ssl_redirect = true,"))
 		})
 
 		wlKey := "no-tls-redirect-locations"
@@ -42,7 +43,8 @@ var _ = framework.DescribeSetting("Add no tls redirect locations", func() {
 		f.UpdateNginxConfigMapData(wlKey, wlValue)
 
 		f.WaitForNginxConfiguration(func(server string) bool {
-			return strings.Contains(server, "set $force_no_ssl_redirect \"true\"")
+			return strings.Contains(server, fmt.Sprintf("force_no_ssl_redirect = true,"))
 		})
+
 	})
 })

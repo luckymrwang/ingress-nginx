@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 	"github.com/stretchr/testify/assert"
 
 	"k8s.io/ingress-nginx/test/e2e/framework"
@@ -58,13 +58,10 @@ var _ = framework.DescribeAnnotation("from-to-www-redirect", func() {
 			WithHeader("Host", fmt.Sprintf("%s.%s", "www", host)).
 			Expect().
 			Status(http.StatusPermanentRedirect).
-			Header("Location").Equal("http://fromtowwwredirect.bar.com:80/foo")
+			Header("Location").Equal("http://fromtowwwredirect.bar.com/foo")
 	})
 
 	ginkgo.It("should redirect from www HTTPS to HTTPS", func() {
-		disableSnippet := f.AllowSnippetConfiguration()
-		defer disableSnippet()
-
 		ginkgo.By("setting up server for redirect from www")
 
 		fromHost := fmt.Sprintf("%s.nip.io", f.GetNginxIP())
@@ -93,7 +90,7 @@ var _ = framework.DescribeAnnotation("from-to-www-redirect", func() {
 
 		ginkgo.By("sending request to www should redirect to domain")
 		f.HTTPTestClientWithTLSConfig(&tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // Ignore the gosec error in testing
+			InsecureSkipVerify: true,
 			ServerName:         toHost,
 		}).
 			GET("/").
@@ -101,11 +98,11 @@ var _ = framework.DescribeAnnotation("from-to-www-redirect", func() {
 			WithHeader("Host", toHost).
 			Expect().
 			Status(http.StatusPermanentRedirect).
-			Header("Location").Equal(fmt.Sprintf("https://%v:443", fromHost))
+			Header("Location").Equal(fmt.Sprintf("https://%v", fromHost))
 
 		ginkgo.By("sending request to domain should not redirect to www")
 		f.HTTPTestClientWithTLSConfig(&tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // Ignore the gosec error in testing
+			InsecureSkipVerify: true,
 			ServerName:         fromHost,
 		}).
 			GET("/").

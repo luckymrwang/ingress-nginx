@@ -64,7 +64,7 @@ local function get_implementation(backend)
 
   local implementation = IMPLEMENTATIONS[name]
   if not implementation then
-    ngx.log(ngx.WARN, backend["load-balance"], " is not supported, ",
+    ngx.log(ngx.WARN, backend["load-balance"], "is not supported, ",
             "falling back to ", DEFAULT_LB_ALG)
     implementation = IMPLEMENTATIONS[DEFAULT_LB_ALG]
   end
@@ -77,10 +77,8 @@ local function resolve_external_names(original_backend)
   local endpoints = {}
   for _, endpoint in ipairs(backend.endpoints) do
     local ips = dns_lookup(endpoint.address)
-    if #ips ~= 1 or ips[1] ~= endpoint.address then
-      for _, ip in ipairs(ips) do
-        table.insert(endpoints, { address = ip, port = endpoint.port })
-      end
+    for _, ip in ipairs(ips) do
+      table.insert(endpoints, { address = ip, port = endpoint.port })
     end
   end
   backend.endpoints = endpoints
@@ -106,17 +104,13 @@ local function is_backend_with_external_name(backend)
 end
 
 local function sync_backend(backend)
-  -- We resolve external names before checking if the endpoints are empty
-  -- because the behavior for resolve_external_names when the name was not
-  -- resolved is to return an empty table so we set the balancer to nil below
-  -- see https://github.com/kubernetes/ingress-nginx/pull/10989
-  if is_backend_with_external_name(backend) then
-    backend = resolve_external_names(backend)
-  end
-
   if not backend.endpoints or #backend.endpoints == 0 then
     balancers[backend.name] = nil
     return
+  end
+
+  if is_backend_with_external_name(backend) then
+    backend = resolve_external_names(backend)
   end
 
   backend.endpoints = format_ipv6_endpoints(backend.endpoints)

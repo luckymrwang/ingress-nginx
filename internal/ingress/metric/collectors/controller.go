@@ -22,7 +22,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/ingress-nginx/pkg/apis/ingress"
+	"k8s.io/ingress-nginx/internal/ingress"
 	"k8s.io/ingress-nginx/version"
 	"k8s.io/klog/v2"
 )
@@ -30,9 +30,8 @@ import (
 var (
 	operation        = []string{"controller_namespace", "controller_class", "controller_pod"}
 	ingressOperation = []string{"controller_namespace", "controller_class", "controller_pod", "namespace", "ingress"}
-	sslLabelHost     = []string{"namespace", "class", "host", "secret_name", "identifier"}
+	sslLabelHost     = []string{"namespace", "class", "host", "secret_name"}
 	sslInfoLabels    = []string{"namespace", "class", "host", "secret_name", "identifier", "issuer_organization", "issuer_common_name", "serial_number", "public_key_algorithm"}
-	orphanityLabels  = []string{"controller_namespace", "controller_class", "controller_pod", "namespace", "ingress", "type"}
 )
 
 // Controller defines base metrics about the ingress controller
@@ -49,7 +48,6 @@ type Controller struct {
 	checkIngressOperationErrors *prometheus.CounterVec
 	sslExpireTime               *prometheus.GaugeVec
 	sslInfo                     *prometheus.GaugeVec
-	OrphanIngress               *prometheus.GaugeVec
 
 	constLabels prometheus.Labels
 	labels      prometheus.Labels
@@ -173,15 +171,6 @@ func NewController(pod, namespace, class string) *Controller {
 			},
 			[]string{"name"},
 		),
-		OrphanIngress: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: PrometheusNamespace,
-				Name:      "orphan_ingress",
-				Help: `Gauge reporting status of ingress orphanity, 1 indicates orphaned ingress.
-			'namespace' is the string used to identify namespace of ingress, 'ingress' for ingress name and 'type' for 'no-service' or 'no-endpoint' of orphanity`,
-			},
-			orphanityLabels,
-		),
 	}
 
 	return cm
@@ -225,26 +214,6 @@ func (cm *Controller) IncCheckErrorCount(namespace, name string) {
 	cm.checkIngressOperationErrors.MustCurryWith(cm.constLabels).With(labels).Inc()
 }
 
-// IncOrphanIngress sets the orphaned ingress gauge to one
-func (cm *Controller) IncOrphanIngress(namespace, name, orphanityType string) {
-	labels := prometheus.Labels{
-		"namespace": namespace,
-		"ingress":   name,
-		"type":      orphanityType,
-	}
-	cm.OrphanIngress.MustCurryWith(cm.constLabels).With(labels).Set(1.0)
-}
-
-// DecOrphanIngress sets the orphaned ingress gauge to zero (all services has their endpoints)
-func (cm *Controller) DecOrphanIngress(namespace, name, orphanityType string) {
-	labels := prometheus.Labels{
-		"namespace": namespace,
-		"ingress":   name,
-		"type":      orphanityType,
-	}
-	cm.OrphanIngress.MustCurryWith(cm.constLabels).With(labels).Set(0.0)
-}
-
 // ConfigSuccess set a boolean flag according to the output of the controller configuration reload
 func (cm *Controller) ConfigSuccess(hash uint64, success bool) {
 	if success {
@@ -261,7 +230,7 @@ func (cm *Controller) ConfigSuccess(hash uint64, success bool) {
 }
 
 // Describe implements prometheus.Collector
-func (cm *Controller) Describe(ch chan<- *prometheus.Desc) {
+func (cm Controller) Describe(ch chan<- *prometheus.Desc) {
 	cm.configHash.Describe(ch)
 	cm.configSuccess.Describe(ch)
 	cm.configSuccessTime.Describe(ch)
@@ -273,11 +242,10 @@ func (cm *Controller) Describe(ch chan<- *prometheus.Desc) {
 	cm.sslInfo.Describe(ch)
 	cm.leaderElection.Describe(ch)
 	cm.buildInfo.Describe(ch)
-	cm.OrphanIngress.Describe(ch)
 }
 
 // Collect implements the prometheus.Collector interface.
-func (cm *Controller) Collect(ch chan<- prometheus.Metric) {
+func (cm Controller) Collect(ch chan<- prometheus.Metric) {
 	cm.configHash.Collect(ch)
 	cm.configSuccess.Collect(ch)
 	cm.configSuccessTime.Collect(ch)
@@ -289,59 +257,52 @@ func (cm *Controller) Collect(ch chan<- prometheus.Metric) {
 	cm.sslInfo.Collect(ch)
 	cm.leaderElection.Collect(ch)
 	cm.buildInfo.Collect(ch)
-	cm.OrphanIngress.Collect(ch)
 }
 
 // SetSSLExpireTime sets the expiration time of SSL Certificates
 func (cm *Controller) SetSSLExpireTime(servers []*ingress.Server) {
 	for _, s := range servers {
-		if !(s.Hostname != "" && s.SSLCert != nil && s.SSLCert.ExpireTime.Unix() > 0) {
-			continue
-		}
+		if s.Hostname != "" && s.SSLCert != nil && s.SSLCert.ExpireTime.Unix() > 0 {
+			labels := make(prometheus.Labels, len(cm.labels)+1)
+			for k, v := range cm.labels {
+				labels[k] = v
+			}
+			labels["host"] = s.Hostname
+			labels["secret_name"] = s.SSLCert.Name
 
-		labels := make(prometheus.Labels, len(cm.labels)+1)
-		for k, v := range cm.labels {
-			labels[k] = v
+			cm.sslExpireTime.With(labels).Set(float64(s.SSLCert.ExpireTime.Unix()))
 		}
-		labels["host"] = s.Hostname
-		labels["secret_name"] = s.SSLCert.Name
-		labels["namespace"] = s.SSLCert.Namespace
-		labels["identifier"] = s.SSLCert.Identifier()
-
-		cm.sslExpireTime.With(labels).Set(float64(s.SSLCert.ExpireTime.Unix()))
 	}
 }
 
-// SetSSLInfo creates a metric with all certificate information
+// SetSSLInfo creates a metric with all certificates informations
 func (cm *Controller) SetSSLInfo(servers []*ingress.Server) {
 	for _, s := range servers {
-		if s.SSLCert == nil || s.SSLCert.Certificate == nil || s.SSLCert.Certificate.SerialNumber == nil {
-			continue
-		}
+		if s.SSLCert != nil && s.SSLCert.Certificate != nil && s.SSLCert.Certificate.SerialNumber != nil {
+			labels := make(prometheus.Labels, len(cm.labels)+1)
+			for k, v := range cm.labels {
+				labels[k] = v
+			}
+			labels["identifier"] = s.SSLCert.Identifier()
+			labels["host"] = s.Hostname
+			labels["secret_name"] = s.SSLCert.Name
+			labels["namespace"] = s.SSLCert.Namespace
+			labels["issuer_common_name"] = s.SSLCert.Certificate.Issuer.CommonName
+			labels["issuer_organization"] = ""
+			if len(s.SSLCert.Certificate.Issuer.Organization) > 0 {
+				labels["issuer_organization"] = s.SSLCert.Certificate.Issuer.Organization[0]
+			}
+			labels["serial_number"] = s.SSLCert.Certificate.SerialNumber.String()
+			labels["public_key_algorithm"] = s.SSLCert.Certificate.PublicKeyAlgorithm.String()
 
-		labels := make(prometheus.Labels, len(cm.labels)+1)
-		for k, v := range cm.labels {
-			labels[k] = v
+			cm.sslInfo.With(labels).Set(1)
 		}
-		labels["identifier"] = s.SSLCert.Identifier()
-		labels["host"] = s.Hostname
-		labels["secret_name"] = s.SSLCert.Name
-		labels["namespace"] = s.SSLCert.Namespace
-		labels["issuer_common_name"] = s.SSLCert.Certificate.Issuer.CommonName
-		labels["issuer_organization"] = ""
-		if len(s.SSLCert.Certificate.Issuer.Organization) > 0 {
-			labels["issuer_organization"] = s.SSLCert.Certificate.Issuer.Organization[0]
-		}
-		labels["serial_number"] = s.SSLCert.Certificate.SerialNumber.String()
-		labels["public_key_algorithm"] = s.SSLCert.Certificate.PublicKeyAlgorithm.String()
-
-		cm.sslInfo.With(labels).Set(1)
 	}
 }
 
-// RemoveMetrics removes metrics for certificates not available anymore by identifier
-func (cm *Controller) RemoveMetrics(certificates []string, registry prometheus.Gatherer) {
-	cm.removeSSLExpireMetrics(true, certificates, registry)
+// RemoveMetrics removes metrics for hostnames not available anymore
+func (cm *Controller) RemoveMetrics(hosts, certificates []string, registry prometheus.Gatherer) {
+	cm.removeSSLExpireMetrics(true, hosts, registry)
 	cm.removeCertificatesMetrics(true, certificates, registry)
 }
 
@@ -392,14 +353,14 @@ func (cm *Controller) removeCertificatesMetrics(onlyDefinedHosts bool, certifica
 	}
 }
 
-func (cm *Controller) removeSSLExpireMetrics(onlyDefinedCerts bool, certificates []string, registry prometheus.Gatherer) {
+func (cm *Controller) removeSSLExpireMetrics(onlyDefinedHosts bool, hosts []string, registry prometheus.Gatherer) {
 	mfs, err := registry.Gather()
 	if err != nil {
 		klog.ErrorS(err, "Error gathering metrics")
 		return
 	}
 
-	toRemove := sets.NewString(certificates...)
+	toRemove := sets.NewString(hosts...)
 
 	for _, mf := range mfs {
 		metricName := mf.GetName()
@@ -416,24 +377,19 @@ func (cm *Controller) removeSSLExpireMetrics(onlyDefinedCerts bool, certificates
 			// remove labels that are constant
 			deleteConstants(labels)
 
-			identifier, ok := labels["identifier"]
-			if !ok {
-				continue
-			}
-
 			host, ok := labels["host"]
 			if !ok {
 				continue
 			}
 
-			if onlyDefinedCerts && !toRemove.Has(identifier) {
+			if onlyDefinedHosts && !toRemove.Has(host) {
 				continue
 			}
 
-			klog.V(2).InfoS("Removing prometheus metric", "gauge", metricName, "host", host, "identifier", identifier)
+			klog.V(2).InfoS("Removing prometheus metric", "gauge", metricName, "host", host)
 			removed := cm.sslExpireTime.Delete(labels)
 			if !removed {
-				klog.V(2).InfoS("metric removed", "metric", metricName, "host", host, "identifier", identifier, "labels", labels)
+				klog.V(2).InfoS("metric removed", "metric", metricName, "host", host, "labels", labels)
 			}
 		}
 	}

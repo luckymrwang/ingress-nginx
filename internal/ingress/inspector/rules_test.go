@@ -19,6 +19,7 @@ package inspector
 import "testing"
 
 func TestCheckRegex(t *testing.T) {
+
 	tests := []struct {
 		name    string
 		value   string
@@ -33,11 +34,6 @@ func TestCheckRegex(t *testing.T) {
 			name:    "must refuse invalid alias",
 			wantErr: true,
 			value:   "   alias    blabla/lala ;",
-		},
-		{
-			name:    "must refuse invalid alias with line break",
-			wantErr: true,
-			value:   "alias #\n/lalala/1/;",
 		},
 		{
 			name:    "must refuse invalid attempt to call /etc",

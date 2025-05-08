@@ -14,14 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//nolint:dupl // Ignore dupl errors for similar test case
 package settings
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 
 	"k8s.io/ingress-nginx/test/e2e/framework"
 )
@@ -65,4 +64,5 @@ var _ = framework.DescribeSetting("proxy-send-timeout", func() {
 				return !strings.Contains(server, fmt.Sprintf("proxy_send_timeout %ss;", proxySendTimeout))
 			})
 	})
+
 })

@@ -103,7 +103,6 @@ local function do_ocsp_request(url, ocsp_request)
       ["Host"] = parsed_url[2],
     },
     body = ocsp_request,
-    ssl_server_name = parsed_url[2],
   })
   if not http_response then
     return nil, err
@@ -121,12 +120,8 @@ end
 -- While this has no functional implications, it generates extra load on OCSP servers.
 local function fetch_and_cache_ocsp_response(uid, der_cert)
   local url, err = ocsp.get_ocsp_responder_from_der_chain(der_cert)
-  if not url and err then
+  if not url then
     ngx.log(ngx.ERR, "could not extract OCSP responder URL: ", err)
-    return
-  end
-  if not url and not err then
-    ngx.log(ngx.DEBUG, "no OCSP responder URL returned")
     return
   end
 

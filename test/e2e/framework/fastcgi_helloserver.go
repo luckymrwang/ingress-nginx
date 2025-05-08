@@ -14,11 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//nolint:dupl // Ignore dupl errors for similar test case
 package framework
 
 import (
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -59,7 +58,7 @@ func (f *Framework) NewNewFastCGIHelloServerDeploymentWithReplicas(replicas int3
 					Containers: []corev1.Container{
 						{
 							Name:  "fastcgi-helloserver",
-							Image: "registry.k8s.io/ingress-nginx/fastcgi-helloserver:v1.1.2@sha256:67133b24b7a9f556aa6977484db5af7e16f6a9509dba757cc2c003834c0af489",
+							Image: "k8s.gcr.io/ingress-nginx/e2e-test-fastcgi-helloserver@sha256:723b8187e1768d199b93fd939c37c1ce9427dcbca72ec6415f4d890bca637fcc",
 							Env:   []corev1.EnvVar{},
 							Ports: []corev1.ContainerPort{
 								{
@@ -76,7 +75,7 @@ func (f *Framework) NewNewFastCGIHelloServerDeploymentWithReplicas(replicas int3
 
 	d := f.EnsureDeployment(deployment)
 
-	err := waitForPodsReady(f.KubeClientSet, DefaultTimeout, int(replicas), f.Namespace, &metav1.ListOptions{
+	err := waitForPodsReady(f.KubeClientSet, DefaultTimeout, int(replicas), f.Namespace, metav1.ListOptions{
 		LabelSelector: fields.SelectorFromSet(fields.Set(d.Spec.Template.ObjectMeta.Labels)).String(),
 	})
 	assert.Nil(ginkgo.GinkgoT(), err, "failed to wait for to become ready")

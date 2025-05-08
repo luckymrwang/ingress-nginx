@@ -29,14 +29,9 @@ SHELL=/bin/bash -o pipefail -o errexit
 # Use the 0.0 tag for testing, it shouldn't clobber any release builds
 TAG ?= $(shell cat TAG)
 
-# The env below is called GO_VERSION and not GOLANG_VERSION because 
-# the gcb image we use to build already defines GOLANG_VERSION and is a 
-# really old version
-GO_VERSION ?= $(shell cat GOLANG_VERSION)
-
 # e2e settings
 # Allow limiting the scope of the e2e tests. By default run everything
-FOCUS ?=
+FOCUS ?= .*
 # number of parallel test
 E2E_NODES ?= 7
 # run e2e test suite with tests that check for memory leaks? (default is false)
@@ -58,9 +53,9 @@ ifneq ($(PLATFORM),)
 	PLATFORM_FLAG="--platform"
 endif
 
-REGISTRY = registry.cn-hangzhou.aliyuncs.com/testwydimage
+REGISTRY ?= gcr.io/k8s-staging-ingress-nginx
 
-BASE_IMAGE ?= $(shell cat NGINX_BASE)
+BASE_IMAGE ?= k8s.gcr.io/ingress-nginx/nginx:81c2afd975a6f9a9847184472286044d7d5296f6@sha256:a71ac64dd8cfd68341ba47dbdc4d8c2cb91325fce669875193ea0319118201b5
 
 GOARCH=$(ARCH)
 
@@ -70,7 +65,7 @@ help:  ## Display this help
 .PHONY: image
 image: clean-image ## Build image for a particular arch.
 	echo "Building docker image ($(ARCH))..."
-	docker build \
+	@docker build \
 		${PLATFORM_FLAG} ${PLATFORM} \
 		--no-cache \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
@@ -80,21 +75,17 @@ image: clean-image ## Build image for a particular arch.
 		--build-arg BUILD_ID="$(BUILD_ID)" \
 		-t $(REGISTRY)/controller:$(TAG) rootfs
 
-.PHONY: gosec
-gosec:
-	docker run --rm -it -w /source/ -v "$(pwd)"/:/source securego/gosec:2.11.0 -exclude=G109,G601,G104,G204,G304,G306,G307 -tests=false -exclude-dir=test -exclude-dir=images/  -exclude-dir=docs/ /source/...
-
 .PHONY: image-chroot
 image-chroot: clean-chroot-image ## Build image for a particular arch.
 	echo "Building docker image ($(ARCH))..."
-	docker build \
+	@docker build \
 		--no-cache \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
 		--build-arg VERSION="$(TAG)" \
 		--build-arg TARGETARCH="$(ARCH)" \
 		--build-arg COMMIT_SHA="$(COMMIT_SHA)" \
 		--build-arg BUILD_ID="$(BUILD_ID)" \
-		-t $(REGISTRY)/controller-chroot:$(TAG) rootfs -f rootfs/Dockerfile-chroot
+		-t $(REGISTRY)/controller-chroot:$(TAG) rootfs -f rootfs/Dockerfile.chroot
 
 .PHONY: clean-image
 clean-image: ## Removes local image
@@ -110,80 +101,64 @@ clean-chroot-image: ## Removes local image
 
 .PHONY: build
 build:  ## Build ingress controller, debug tool and pre-stop hook.
-	E2E_IMAGE=golang:$(GO_VERSION)-alpine3.21 USE_SHELL=/bin/sh build/run-in-docker.sh \
-		MAC_OS=$(MAC_OS) \
+	@build/run-in-docker.sh \
 		PKG=$(PKG) \
 		ARCH=$(ARCH) \
 		COMMIT_SHA=$(COMMIT_SHA) \
 		REPO_INFO=$(REPO_INFO) \
 		TAG=$(TAG) \
+		GOBUILD_FLAGS=$(GOBUILD_FLAGS) \
 		build/build.sh
 
+.PHONY: build-plugin
+build-plugin:  ## Build ingress-nginx krew plugin.
+	@build/run-in-docker.sh \
+		PKG=$(PKG) \
+		ARCH=$(ARCH) \
+		COMMIT_SHA=$(COMMIT_SHA) \
+		REPO_INFO=$(REPO_INFO) \
+		TAG=$(TAG) \
+		GOBUILD_FLAGS=$(GOBUILD_FLAGS) \
+		build/build-plugin.sh
 
 .PHONY: clean
 clean: ## Remove .gocache directory.
 	rm -rf bin/ .gocache/ .cache/
 
-.PHONY: verify-docs
-verify-docs: ## Verify doc generation
-	hack/verify-annotation-docs.sh
-
 .PHONY: static-check
 static-check: ## Run verification script for boilerplate, codegen, gofmt, golint, lualint and chart-lint.
 	@build/run-in-docker.sh \
-	    MAC_OS=$(MAC_OS) \
 		hack/verify-all.sh
-
-.PHONY: golint-check
-golint-check:
-	@build/run-in-docker.sh \
-	    MAC_OS=$(MAC_OS) \
-		hack/verify-golint.sh
-
-###############################
-# Tests for ingress-nginx
-###############################
 
 .PHONY: test
 test:  ## Run go unit tests.
 	@build/run-in-docker.sh \
 		PKG=$(PKG) \
-		MAC_OS=$(MAC_OS) \
 		ARCH=$(ARCH) \
 		COMMIT_SHA=$(COMMIT_SHA) \
 		REPO_INFO=$(REPO_INFO) \
 		TAG=$(TAG) \
-		GOFLAGS="-buildvcs=false" \
-		test/test.sh
+		GOBUILD_FLAGS=$(GOBUILD_FLAGS) \
+		build/test.sh
 
 .PHONY: lua-test
 lua-test: ## Run lua unit tests.
 	@build/run-in-docker.sh \
-		MAC_OS=$(MAC_OS) \
-		test/test-lua.sh
+		BUSTED_ARGS=$(BUSTED_ARGS) \
+		build/test-lua.sh
 
 .PHONY: e2e-test
 e2e-test:  ## Run e2e tests (expects access to a working Kubernetes cluster).
-	@test/e2e/run-e2e-suite.sh
-
-.PHONY: kind-e2e-test
-kind-e2e-test:  ## Run e2e tests using kind.
-	@test/e2e/run-kind-e2e.sh
-
-.PHONY: kind-e2e-chart-tests
-kind-e2e-chart-tests: ## Run helm chart e2e tests
-	@test/e2e/run-chart-test.sh
+	@build/run-e2e-suite.sh
 
 .PHONY: e2e-test-binary
 e2e-test-binary:  ## Build binary for e2e tests.
 	@build/run-in-docker.sh \
-		MAC_OS=$(MAC_OS) \
 		ginkgo build ./test/e2e
 
 .PHONY: print-e2e-suite
 print-e2e-suite: e2e-test-binary ## Prints information about the suite of e2e tests.
 	@build/run-in-docker.sh \
-		MAC_OS=$(MAC_OS) \
 		hack/print-e2e-suite.sh
 
 .PHONY: vet
@@ -206,19 +181,14 @@ dev-env:  ## Starts a local Kubernetes cluster using kind, building and deployin
 dev-env-stop: ## Deletes local Kubernetes cluster created by kind.
 	@kind delete cluster --name ingress-nginx-dev
 
-
-
 .PHONY: live-docs
 live-docs: ## Build and launch a local copy of the documentation website in http://localhost:8000
-	@docker build ${PLATFORM_FLAG} ${PLATFORM} \
-                  		--no-cache \
-                  		 -t ingress-nginx-docs .github/actions/mkdocs
+	@docker build ${PLATFORM_FLAG} ${PLATFORM} -t ingress-nginx-docs .github/actions/mkdocs
 	@docker run ${PLATFORM_FLAG} ${PLATFORM} --rm -it \
 		-p 8000:8000 \
 		-v ${PWD}:/docs \
-		--entrypoint /bin/bash   \
-		ingress-nginx-docs \
-		-c "pip install -r /docs/docs/requirements.txt && mkdocs serve --dev-addr=0.0.0.0:8000"
+		--entrypoint mkdocs \
+		ingress-nginx-docs serve --dev-addr=0.0.0.0:8000
 
 .PHONY: misspell
 misspell:  ## Check for spelling errors.
@@ -228,55 +198,56 @@ misspell:  ## Check for spelling errors.
 		-error \
 		cmd/* internal/* deploy/* docs/* design/* test/* README.md
 
+.PHONY: kind-e2e-test
+kind-e2e-test:  ## Run e2e tests using kind.
+	@test/e2e/run.sh
+
+.PHONY: kind-e2e-chart-tests
+kind-e2e-chart-tests: ## Run helm chart e2e tests
+	@test/e2e/run-chart-test.sh
+
 .PHONY: run-ingress-controller
 run-ingress-controller: ## Run the ingress controller locally using a kubectl proxy connection.
 	@build/run-ingress-controller.sh
 
-.PHONY: builder
-builder:
-	docker buildx create --name $(BUILDER) --bootstrap --use || :
-	docker buildx inspect $(BUILDER)
+.PHONY: ensure-buildx
+ensure-buildx:
+	./hack/init-buildx.sh
 
 .PHONY: show-version
 show-version:
 	echo -n $(TAG)
 
-BUILDER ?= ingress-nginx
-PLATFORMS = amd64 arm arm64
-BUILDX_PLATFORMS = amd64,arm,arm64
+PLATFORMS ?= amd64 arm arm64 s390x
+
+EMPTY :=
+SPACE := $(EMPTY) $(EMPTY)
+COMMA := ,
 
 .PHONY: release # Build a multi-arch docker image
-release: 
+release: ensure-buildx clean
 	echo "Building binaries..."
 	$(foreach PLATFORM,$(PLATFORMS), echo -n "$(PLATFORM)..."; ARCH=$(PLATFORM) make build;)
 
-	echo "Building and pushing ingress-nginx image...$(BUILDX_PLATFORMS)"
-
-	docker buildx build \
+	echo "Building and pushing ingress-nginx image..."
+	@docker buildx build \
 		--no-cache \
-		$(MAC_DOCKER_FLAGS) \
 		--push \
 		--progress plain \
-		--platform $(BUILDX_PLATFORMS) \
+		--platform $(subst $(SPACE),$(COMMA),$(PLATFORMS)) \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
 		--build-arg VERSION="$(TAG)" \
 		--build-arg COMMIT_SHA="$(COMMIT_SHA)" \
 		--build-arg BUILD_ID="$(BUILD_ID)" \
 		-t $(REGISTRY)/controller:$(TAG) rootfs
-
-	docker buildx build \
+	
+	@docker buildx build \
 		--no-cache \
-		$(MAC_DOCKER_FLAGS) \
 		--push \
 		--progress plain \
-		--platform $(BUILDX_PLATFORMS)  \
+		--platform $(subst $(SPACE),$(COMMA),$(PLATFORMS)) \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
 		--build-arg VERSION="$(TAG)" \
 		--build-arg COMMIT_SHA="$(COMMIT_SHA)" \
 		--build-arg BUILD_ID="$(BUILD_ID)" \
-		-t $(REGISTRY)/controller-chroot:$(TAG) rootfs -f rootfs/Dockerfile-chroot
-
-.PHONY: build-docs
-build-docs:
-	pip install -r docs/requirements.txt
-	mkdocs build --config-file mkdocs.yml
+		-t $(REGISTRY)/controller-chroot:$(TAG) rootfs -f rootfs/Dockerfile.chroot

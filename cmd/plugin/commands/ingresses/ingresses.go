@@ -36,7 +36,7 @@ func CreateCommand(flags *genericclioptions.ConfigFlags) *cobra.Command {
 		Use:     "ingresses",
 		Aliases: []string{"ingress", "ing"},
 		Short:   "Provide a short summary of all of the ingress definitions",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			host, err := cmd.Flags().GetString("host")
 			if err != nil {
 				return err
@@ -74,9 +74,9 @@ func ingresses(flags *genericclioptions.ConfigFlags, host string, allNamespaces 
 
 	if host != "" {
 		rowsWithHost := make([]ingressRow, 0)
-		for i := range rows {
-			if rows[i].Host == host {
-				rowsWithHost = append(rowsWithHost, rows[i])
+		for _, row := range rows {
+			if row.Host == host {
+				rowsWithHost = append(rowsWithHost, row)
 			}
 		}
 		rows = rowsWithHost
@@ -91,8 +91,7 @@ func ingresses(flags *genericclioptions.ConfigFlags, host string, allNamespaces 
 		fmt.Fprintln(printer, "INGRESS NAME\tHOST+PATH\tADDRESSES\tTLS\tSERVICE\tSERVICE PORT\tENDPOINTS")
 	}
 
-	for i := range rows {
-		row := &rows[i]
+	for _, row := range rows {
 		var tlsMsg string
 		if row.TLS {
 			tlsMsg = "YES"
@@ -135,18 +134,18 @@ type ingressRow struct {
 func getIngressRows(ingresses *[]networking.Ingress) []ingressRow {
 	rows := make([]ingressRow, 0)
 
-	for i := range *ingresses {
-		ing := &(*ingresses)[i]
+	for _, ing := range *ingresses {
+
 		address := ""
 		for _, lbIng := range ing.Status.LoadBalancer.Ingress {
-			if lbIng.IP != "" {
+			if len(lbIng.IP) > 0 {
 				address = address + lbIng.IP + ","
 			}
-			if lbIng.Hostname != "" {
+			if len(lbIng.Hostname) > 0 {
 				address = address + lbIng.Hostname + ","
 			}
 		}
-		if address != "" {
+		if len(address) > 0 {
 			address = address[:len(address)-1]
 		}
 
@@ -166,7 +165,7 @@ func getIngressRows(ingresses *[]networking.Ingress) []ingressRow {
 		}
 
 		// Handle catch-all ingress
-		if len(ing.Spec.Rules) == 0 && defaultBackendService != "" {
+		if len(ing.Spec.Rules) == 0 && len(defaultBackendService) > 0 {
 			row := ingressRow{
 				Namespace:   ing.Namespace,
 				IngressName: ing.Name,
@@ -183,7 +182,7 @@ func getIngressRows(ingresses *[]networking.Ingress) []ingressRow {
 		for _, rule := range ing.Spec.Rules {
 			_, hasTLS := tlsHosts[rule.Host]
 
-			// Handle ingress with no paths
+			//Handle ingress with no paths
 			if rule.HTTP == nil {
 				row := ingressRow{
 					Namespace:   ing.Namespace,

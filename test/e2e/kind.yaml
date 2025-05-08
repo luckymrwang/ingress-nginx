@@ -2,14 +2,8 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
-  labels:
-    topology.kubernetes.io/zone: zone-1
 - role: worker
-  labels:
-    topology.kubernetes.io/zone: zone-1
 - role: worker
-  labels:
-    topology.kubernetes.io/zone: zone-2
 kubeadmConfigPatches:
 - |
   kind: ClusterConfiguration
@@ -19,3 +13,4 @@ kubeadmConfigPatches:
     extraArgs:
       namespace-sync-period: 10s
       concurrent-deployment-syncs: "30"
+      deployment-controller-sync-period: 10s

@@ -12,24 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG GOLANG_VERSION
-
-FROM --platform=$BUILDPLATFORM golang:${GOLANG_VERSION} AS builder
-
+FROM --platform=$BUILDPLATFORM golang:1.16 as builder
 ARG BUILDPLATFORM
 ARG TARGETARCH
 
-
 WORKDIR /workspace
 COPY . .
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -a -o kube-webhook-certgen main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -a -o kube-webhook-certgen main.go
 
 FROM --platform=$BUILDPLATFORM gcr.io/distroless/static:nonroot
 ARG BUILDPLATFORM
 ARG TARGETARCH
-
-LABEL org.opencontainers.image.source=https://github.com/kubernetes/ingress-nginx
-
 WORKDIR /
 COPY --from=builder /workspace/kube-webhook-certgen /kube-webhook-certgen
 USER 65532:65532

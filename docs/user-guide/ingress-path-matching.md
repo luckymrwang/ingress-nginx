@@ -3,10 +3,7 @@
 ## Regular Expression Support
 
 !!! important
-    Regular expressions is not supported in the `spec.rules.host` field. The wildcard character '\*' must appear by itself as the first DNS label and matches only a single label. You cannot have a wildcard label by itself (e.g. Host == "\*").
-
-!!! note
-    Please see the [FAQ](../faq.md#validation-of-path) for Validation Of __`path`__
+    Regular expressions and wild cards are not supported in the `spec.rules.host` field. Full hostnames must be used.
 
 The ingress controller supports **case insensitive** regular expressions in the `spec.rules.http.paths.path` field.
 This can be enabled by setting the `nginx.ingress.kubernetes.io/use-regex` annotation to `true` (the default is false).
@@ -31,7 +28,7 @@ spec:
     http:
       paths:
       - path: /foo/.*
-        pathType: ImplementationSpecific
+        pathType: Prefix
         backend:
           service:
             name: test
@@ -98,7 +95,7 @@ spec:
     http:
       paths:
       - path: /foo/bar/(.+)
-        pathType: ImplementationSpecific
+        pathType: Prefix
         backend:
           service:
             name: service3
@@ -163,7 +160,7 @@ spec:
             port: 
               number: 80
       - path: /foo/bar/[A-Z0-9]{3}
-        pathType: ImplementationSpecific
+        pathType: Prefix
         backend:
           service:
             name: test

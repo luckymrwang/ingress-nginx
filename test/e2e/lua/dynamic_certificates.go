@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
@@ -245,6 +245,7 @@ var _ = framework.IngressNginxDescribe("[Lua] dynamic certificates", func() {
 				WithHeader("Host", host).
 				Expect().
 				Status(http.StatusOK)
+
 		})
 	})
 })
@@ -253,6 +254,7 @@ func extractReloadCount(mf *dto.MetricFamily) (float64, error) {
 	vec, err := expfmt.ExtractSamples(&expfmt.DecodeOptions{
 		Timestamp: model.Now(),
 	}, mf)
+
 	if err != nil {
 		return 0, err
 	}

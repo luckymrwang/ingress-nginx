@@ -1,4 +1,4 @@
-# Copyright 2025 The Kubernetes Authors. All rights reserved.
+# Copyright 2018 The Kubernetes Authors. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,48 +12,58 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-BUILDER ?= ingress-nginx
-PLATFORMS ?= linux/amd64,linux/arm64
-REGISTRY ?= us-central1-docker.pkg.dev/k8s-staging-images/ingress-nginx
-IMAGE ?= $(REGISTRY)/e2e-test-runner
-TAG ?= $(shell cat TAG)
+# set default shell
+SHELL=/bin/bash -o pipefail -o errexit
 
-DIR = $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-BASE_IMAGE ?= $(shell cat $(DIR)/../../NGINX_BASE)
-GOLANG_VERSION ?= $(shell cat $(DIR)/../../GOLANG_VERSION)
+DIR:=$(strip $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))))
+INIT_BUILDX=$(DIR)/../../hack/init-buildx.sh
 
-.PHONY: builder
-builder:
-	docker buildx create --name $(BUILDER) --bootstrap || :
-	docker buildx inspect $(BUILDER)
+TAG ?=v$(shell date +%m%d%Y)-$(shell git rev-parse --short HEAD)
+REGISTRY ?= local
 
-.PHONY: build
-build: builder
+IMAGE = $(REGISTRY)/e2e-test-runner
+
+NGINX_BASE_IMAGE ?= k8s.gcr.io/ingress-nginx/nginx:81c2afd975a6f9a9847184472286044d7d5296f6@sha256:a71ac64dd8cfd68341ba47dbdc4d8c2cb91325fce669875193ea0319118201b5
+
+# required to enable buildx
+export DOCKER_CLI_EXPERIMENTAL=enabled
+
+# build with buildx
+PLATFORMS?=linux/amd64,linux/arm64
+OUTPUT=
+PROGRESS=plain
+
+build: ensure-buildx
 	docker buildx build \
-		--builder $(BUILDER) \
-		--platform $(PLATFORMS) \
-		--build-arg BASE_IMAGE=$(BASE_IMAGE) \
-		--build-arg GOLANG_VERSION=$(GOLANG_VERSION) \
-		--build-arg ETCD_VERSION=3.5.13-0 \
-		--build-arg K8S_RELEASE=v1.32.3 \
+		--platform=${PLATFORMS} $(OUTPUT) \
+		--progress=$(PROGRESS) \
+		--pull \
+		--build-arg BASE_IMAGE=$(NGINX_BASE_IMAGE) \
+		--build-arg GOLANG_VERSION=1.17.6 \
+		--build-arg ETCD_VERSION=3.4.3-0 \
+		--build-arg K8S_RELEASE=v1.21.3 \
 		--build-arg RESTY_CLI_VERSION=0.27 \
 		--build-arg RESTY_CLI_SHA=e5f4f3128af49ba5c4d039d0554e5ae91bbe05866f60eccfa96d3653274bff90 \
 		--build-arg LUAROCKS_VERSION=3.8.0 \
 		--build-arg LUAROCKS_SHA=ab6612ca9ab87c6984871d2712d05525775e8b50172701a0a1cabddf76de2be7 \
-		--build-arg CHART_TESTING_VERSION=3.8.0 \
-		--build-arg YAML_LINT_VERSION=1.33.0 \
-		--build-arg YAMALE_VERSION=4.0.4 \
-		--build-arg HELM_VERSION=3.14.4 \
-		--build-arg GINKGO_VERSION=2.23.4 \
-		--build-arg GOLINT_VERSION=latest \
-		rootfs \
-		--tag $(IMAGE):$(TAG) \
-		$(OUTPUT)
+		--build-arg CHART_TESTING_VERSION=3.0.0 \
+		--build-arg YAML_LINT_VERSION=1.13.0 \
+		--build-arg YAMALE_VERSION=1.8.0 \
+		--build-arg HELM_VERSION=v3.4.2 \
+		-t $(IMAGE):$(TAG) rootfs
 
-.PHONY: push
-push: OUTPUT = --push
+# push the cross built image
+push: OUTPUT=--push
 push: build
 
-.PHONY: clean
-clean:
-	docker buildx rm $(BUILDER) || :
+# enable buildx
+ensure-buildx:
+# this is required for cloudbuild
+ifeq ("$(wildcard $(INIT_BUILDX))","")
+	@curl -sSL https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/hack/init-buildx.sh | bash
+else
+	@exec $(INIT_BUILDX)
+endif
+	@echo "done"
+
+.PHONY: build push ensure-buildx

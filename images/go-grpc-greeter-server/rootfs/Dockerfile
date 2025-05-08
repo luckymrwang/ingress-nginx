@@ -1,11 +1,11 @@
-ARG GOLANG_VERSION
-
-FROM golang:${GOLANG_VERSION}-alpine3.21 AS build
+FROM golang:buster as build
 
 WORKDIR /go/src/greeter-server
 
-COPY . .
-RUN go build -o /greeter-server
+RUN curl -o main.go https://raw.githubusercontent.com/grpc/grpc-go/91e0aeb192456225adf27966d04ada4cf8599915/examples/features/reflection/server/main.go && \
+  go mod init greeter-server && \
+  go mod tidy && \
+  go build -o /greeter-server main.go
 
 FROM gcr.io/distroless/base-debian10
 

@@ -28,7 +28,7 @@ import (
 	api "k8s.io/api/core/v1"
 	networking "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/ingress-nginx/pkg/apis/ingress"
+	"k8s.io/ingress-nginx/internal/ingress"
 	klog "k8s.io/klog/v2"
 )
 
@@ -98,9 +98,8 @@ func rlimitMaxNumFiles() int {
 }
 
 const (
-	defBinary  = "/usr/bin/nginx"
-	cfgPath    = "/etc/nginx/nginx.conf"
-	luaCfgPath = "/etc/nginx/lua/cfg.json"
+	defBinary = "/usr/bin/nginx"
+	cfgPath   = "/etc/nginx/nginx.conf"
 )
 
 // NginxExecTester defines the interface to execute
@@ -130,19 +129,17 @@ func NewNginxCommand() NginxCommand {
 	return command
 }
 
-// ExecCommand instantiates an exec.Cmd object to call nginx program
+// ExecCommand instanciates an exec.Cmd object to call nginx program
 func (nc NginxCommand) ExecCommand(args ...string) *exec.Cmd {
 	cmdArgs := []string{}
 
 	cmdArgs = append(cmdArgs, "-c", cfgPath)
 	cmdArgs = append(cmdArgs, args...)
-	//nolint:gosec // Ignore G204 error
 	return exec.Command(nc.Binary, cmdArgs...)
 }
 
 // Test checks if config file is a syntax valid nginx configuration
 func (nc NginxCommand) Test(cfg string) ([]byte, error) {
-	//nolint:gosec // Ignore G204 error
 	return exec.Command(nc.Binary, "-c", cfg, "-t").CombinedOutput()
 }
 

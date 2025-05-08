@@ -12,12 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG GOLANG_VERSION
-
-FROM golang:${GOLANG_VERSION}-alpine3.21 AS builder
-
-RUN apk update \
-    && apk upgrade && apk add git
+FROM golang:1.17-alpine as builder
+RUN apk add git
 
 WORKDIR /go/src/k8s.io/ingress-nginx/images/custom-error-pages
 
@@ -34,7 +30,6 @@ FROM gcr.io/distroless/static:nonroot
 
 COPY --from=builder /go/src/k8s.io/ingress-nginx/images/custom-error-pages/nginx-errors /
 COPY --from=builder /go/src/k8s.io/ingress-nginx/images/custom-error-pages/www /www
-COPY --from=builder /go/src/k8s.io/ingress-nginx/images/custom-error-pages/etc /etc
 USER nonroot:nonroot
 
 CMD ["/nginx-errors"]

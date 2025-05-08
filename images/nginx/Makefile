@@ -1,4 +1,4 @@
-# Copyright 2025 The Kubernetes Authors. All rights reserved.
+# Copyright 2017 The Kubernetes Authors. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,37 +12,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-BUILDER ?= ingress-nginx
-PLATFORMS ?= linux/amd64,linux/arm,linux/arm64
-REGISTRY ?= us-central1-docker.pkg.dev/k8s-staging-images/ingress-nginx
-IMAGE ?= $(REGISTRY)/nginx
-TAG ?= $(shell cat TAG)
+.DEFAULT_GOAL:=build
 
-.PHONY: builder
-builder:
-	docker buildx create --name $(BUILDER) --bootstrap || :
-	docker buildx inspect $(BUILDER)
+# set default shell
+SHELL=/bin/bash -o pipefail -o errexit
 
-.PHONY: build
-build: builder
+DIR:=$(strip $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))))
+INIT_BUILDX=$(DIR)/../../hack/init-buildx.sh
+
+# 0.0.0 shouldn't clobber any released builds
+TAG ?= 0.0
+REGISTRY ?= gcr.io/k8s-staging-ingress-nginx
+
+IMAGE = $(REGISTRY)/nginx
+
+# required to enable buildx
+export DOCKER_CLI_EXPERIMENTAL=enabled
+
+# build with buildx
+PLATFORMS?=linux/amd64,linux/arm,linux/arm64,linux/s390x
+OUTPUT=
+PROGRESS=plain
+build: ensure-buildx
 	docker buildx build \
-		--builder $(BUILDER) \
-		--platform $(PLATFORMS) \
-		rootfs \
-		--tag $(IMAGE):$(TAG)
+		--platform=${PLATFORMS} $(OUTPUT) \
+		--progress=$(PROGRESS) \
+		--pull \
+		--tag $(IMAGE):$(TAG) rootfs
 
-# Pushing in the `build` target does not work as authentication times out after one hour.
-#
-# Therefore we need to build and push in separate commands.
-.PHONY: push
+# push the cross built image
+push: OUTPUT=--push
 push: build
-	docker buildx build \
-		--builder $(BUILDER) \
-		--platform $(PLATFORMS) \
-		rootfs \
-		--tag $(IMAGE):$(TAG) \
-		--push
 
-.PHONY: clean
-clean:
-	docker buildx rm $(BUILDER) || :
+# enable buildx
+ensure-buildx:
+# this is required for cloudbuild
+ifeq ("$(wildcard $(INIT_BUILDX))","")
+	@curl -sSL https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/hack/init-buildx.sh | bash
+else
+	@exec $(INIT_BUILDX)
+endif
+	@echo "done"
+
+.PHONY: build push ensure-buildx

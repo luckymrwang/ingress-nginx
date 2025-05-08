@@ -302,12 +302,7 @@
 				"validationDepth": 0
 			},
 			"use-port-in-redirects": false,
-			"configuration-snippet": "",
-			"customHeaders": {
-				"headers": {
-					"Server": "HAL9000"
-				}
-			}
+			"configuration-snippet": ""
 		}]
 	}, {
 		"hostname": "dev.mycompany.com",

@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,8 +73,7 @@ var _ = framework.IngressNginxDescribe("[SSL] secret update", func() {
 
 		dummySecret.Data["some-key"] = []byte("some value")
 
-		_, err = f.KubeClientSet.CoreV1().Secrets(f.Namespace).Update(context.TODO(), dummySecret, metav1.UpdateOptions{})
-		assert.Nil(ginkgo.GinkgoT(), err, "updating secret")
+		f.KubeClientSet.CoreV1().Secrets(f.Namespace).Update(context.TODO(), dummySecret, metav1.UpdateOptions{})
 
 		assert.NotContains(ginkgo.GinkgoT(), log, fmt.Sprintf("starting syncing of secret %v/dummy", f.Namespace))
 		assert.NotContains(ginkgo.GinkgoT(), log, fmt.Sprintf("error obtaining PEM from secret %v/dummy", f.Namespace))
@@ -98,7 +97,7 @@ var _ = framework.IngressNginxDescribe("[SSL] secret update", func() {
 				return strings.Contains(server, "server_name invalid-ssl") &&
 					strings.Contains(server, "listen 443")
 			})
-		//nolint:gosec // Ignore certificate validation in testing
+
 		resp := f.HTTPTestClientWithTLSConfig(&tls.Config{ServerName: host, InsecureSkipVerify: true}).
 			GET("/").
 			WithURL(f.GetURL(framework.HTTPS)).

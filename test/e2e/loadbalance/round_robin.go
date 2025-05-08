@@ -22,7 +22,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 	"github.com/stretchr/testify/assert"
 
 	"k8s.io/ingress-nginx/test/e2e/framework"
@@ -37,7 +37,7 @@ var _ = framework.DescribeSetting("[Load Balancer] round-robin", func() {
 	})
 
 	ginkgo.It("should evenly distribute requests with round-robin (default algorithm)", func() {
-		host := loadBalanceHost
+		host := "load-balance.com"
 
 		f.EnsureIngress(framework.NewSingleIngress(host, "/", host, f.Namespace, framework.EchoService, 80, nil))
 		f.WaitForNginxServer(host,
@@ -45,9 +45,7 @@ var _ = framework.DescribeSetting("[Load Balancer] round-robin", func() {
 				return strings.Contains(server, "server_name load-balance.com")
 			})
 
-		re, err := regexp.Compile(fmt.Sprintf(`%v.*`, framework.EchoService))
-		assert.Nil(ginkgo.GinkgoT(), err, "error compiling regex")
-
+		re, _ := regexp.Compile(fmt.Sprintf(`%v.*`, framework.EchoService))
 		replicaRequestCount := map[string]int{}
 
 		for i := 0; i < 600; i++ {

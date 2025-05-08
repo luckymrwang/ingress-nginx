@@ -36,8 +36,7 @@ import (
 type leaderElectionConfig struct {
 	Client clientset.Interface
 
-	ElectionID  string
-	ElectionTTL time.Duration
+	ElectionID string
 
 	OnStartedLeading func(chan struct{})
 	OnStoppedLeading func()
@@ -51,7 +50,7 @@ func setupLeaderElection(config *leaderElectionConfig) {
 
 	var cancelContext context.CancelFunc
 
-	newLeaderCtx := func(ctx context.Context) context.CancelFunc {
+	var newLeaderCtx = func(ctx context.Context) context.CancelFunc {
 		// allow to cancel the context in case we stop being the leader
 		leaderCtx, cancel := context.WithCancel(ctx)
 		go elector.Run(leaderCtx)
@@ -60,7 +59,7 @@ func setupLeaderElection(config *leaderElectionConfig) {
 
 	var stopCh chan struct{}
 	callbacks := leaderelection.LeaderCallbacks{
-		OnStartedLeading: func(_ context.Context) {
+		OnStartedLeading: func(ctx context.Context) {
 			klog.V(2).InfoS("I am the new leader")
 			stopCh = make(chan struct{})
 
@@ -87,32 +86,29 @@ func setupLeaderElection(config *leaderElectionConfig) {
 	}
 
 	broadcaster := record.NewBroadcaster()
-	hostname, err := os.Hostname()
-	if err != nil {
-		klog.Errorf("unexpected error getting hostname: %v", err)
-	}
+	hostname, _ := os.Hostname()
+
 	recorder := broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{
 		Component: "ingress-leader-elector",
 		Host:      hostname,
 	})
 
-	objectMeta := metav1.ObjectMeta{Namespace: k8s.IngressPodDetails.Namespace, Name: config.ElectionID}
-	resourceLockConfig := resourcelock.ResourceLockConfig{
-		Identity:      k8s.IngressPodDetails.Name,
-		EventRecorder: recorder,
+	lock := resourcelock.ConfigMapLock{
+		ConfigMapMeta: metav1.ObjectMeta{Namespace: k8s.IngressPodDetails.Namespace, Name: config.ElectionID},
+		Client:        config.Client.CoreV1(),
+		LockConfig: resourcelock.ResourceLockConfig{
+			Identity:      k8s.IngressPodDetails.Name,
+			EventRecorder: recorder,
+		},
 	}
 
-	lock := &resourcelock.LeaseLock{
-		LeaseMeta:  objectMeta,
-		Client:     config.Client.CoordinationV1(),
-		LockConfig: resourceLockConfig,
-	}
+	ttl := 30 * time.Second
 
-	elector, err = leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
-		Lock:          lock,
-		LeaseDuration: config.ElectionTTL,
-		RenewDeadline: config.ElectionTTL / 2,
-		RetryPeriod:   config.ElectionTTL / 4,
+	elector, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
+		Lock:          &lock,
+		LeaseDuration: ttl,
+		RenewDeadline: ttl / 2,
+		RetryPeriod:   ttl / 4,
 
 		Callbacks: callbacks,
 	})

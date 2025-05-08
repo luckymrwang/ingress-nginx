@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 	"github.com/stretchr/testify/assert"
 	networking "k8s.io/api/networking/v1"
 
@@ -35,8 +35,6 @@ var _ = framework.IngressNginxDescribe("[Ingress] [PathType] exact", func() {
 	})
 
 	ginkgo.It("should choose exact location for /exact", func() {
-		disableSnippet := f.AllowSnippetConfiguration()
-		defer disableSnippet()
 
 		host := "exact.path"
 
@@ -44,7 +42,7 @@ var _ = framework.IngressNginxDescribe("[Ingress] [PathType] exact", func() {
 			"nginx.ingress.kubernetes.io/configuration-snippet": `more_set_input_headers "pathType: exact";`,
 		}
 
-		exactPathType := networking.PathTypeExact
+		var exactPathType = networking.PathTypeExact
 		ing := framework.NewSingleIngress("exact", "/exact", host, f.Namespace, framework.EchoService, 80, annotations)
 		ing.Spec.Rules[0].IngressRuleValue.HTTP.Paths[0].PathType = &exactPathType
 		f.EnsureIngress(ing)

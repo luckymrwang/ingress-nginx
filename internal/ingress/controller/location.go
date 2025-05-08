@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	networking "k8s.io/api/networking/v1"
-	"k8s.io/ingress-nginx/pkg/apis/ingress"
+	"k8s.io/ingress-nginx/internal/ingress"
 )
 
 var (
@@ -100,7 +100,7 @@ func normalizePrefixPath(path string) string {
 }
 
 func needsRewrite(location *ingress.Location) bool {
-	if location.Rewrite.Target != "" && location.Rewrite.Target != location.Path {
+	if len(location.Rewrite.Target) > 0 && location.Rewrite.Target != location.Path {
 		return true
 	}
 

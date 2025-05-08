@@ -17,12 +17,12 @@ limitations under the License.
 package annotations
 
 import (
-	"net/http"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 
 	"k8s.io/ingress-nginx/test/e2e/framework"
+	"net/http"
 )
 
 var _ = framework.DescribeAnnotation("disable-access-log disable-http-access-log disable-stream-access-log", func() {

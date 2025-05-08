@@ -29,13 +29,13 @@ import (
 
 	"github.com/eapache/channels"
 	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -43,11 +43,10 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-nginx/internal/ingress/inspector"
+	"k8s.io/klog/v2"
 
-	"k8s.io/ingress-nginx/internal/nginx"
-	"k8s.io/ingress-nginx/pkg/util/file"
-	klog "k8s.io/klog/v2"
-
+	"k8s.io/ingress-nginx/internal/file"
+	"k8s.io/ingress-nginx/internal/ingress"
 	"k8s.io/ingress-nginx/internal/ingress/annotations"
 	"k8s.io/ingress-nginx/internal/ingress/annotations/parser"
 	ngx_config "k8s.io/ingress-nginx/internal/ingress/controller/config"
@@ -57,7 +56,7 @@ import (
 	"k8s.io/ingress-nginx/internal/ingress/errors"
 	"k8s.io/ingress-nginx/internal/ingress/resolver"
 	"k8s.io/ingress-nginx/internal/k8s"
-	"k8s.io/ingress-nginx/pkg/apis/ingress"
+	"k8s.io/ingress-nginx/internal/nginx"
 )
 
 // IngressFilterFunc decides if an Ingress should be omitted or not
@@ -69,9 +68,6 @@ type Storer interface {
 	// GetBackendConfiguration returns the nginx configuration stored in a configmap
 	GetBackendConfiguration() ngx_config.Configuration
 
-	// GetSecurityConfiguration returns the configuration options from Ingress
-	GetSecurityConfiguration() defaults.SecurityConfiguration
-
 	// GetConfigMap returns the ConfigMap matching key.
 	GetConfigMap(key string) (*corev1.ConfigMap, error)
 
@@ -81,8 +77,8 @@ type Storer interface {
 	// GetService returns the Service matching key.
 	GetService(key string) (*corev1.Service, error)
 
-	// GetServiceEndpointsSlices returns the EndpointSlices of a Service matching key.
-	GetServiceEndpointsSlices(key string) ([]*discoveryv1.EndpointSlice, error)
+	// GetServiceEndpoints returns the Endpoints of a Service matching key.
+	GetServiceEndpoints(key string) (*corev1.Endpoints, error)
 
 	// ListIngresses returns a list of all Ingresses in the store.
 	ListIngresses() []*ingress.Ingress
@@ -105,7 +101,7 @@ type Storer interface {
 	Run(stopCh chan struct{})
 
 	// GetIngressClass validates given ingress against ingress class configuration and returns the ingress class.
-	GetIngressClass(ing *networkingv1.Ingress, icConfig *ingressclass.Configuration) (string, error)
+	GetIngressClass(ing *networkingv1.Ingress, icConfig *ingressclass.IngressClassConfiguration) (string, error)
 }
 
 // EventType type of event associated with an informer
@@ -130,13 +126,13 @@ type Event struct {
 
 // Informer defines the required SharedIndexInformers that interact with the API server.
 type Informer struct {
-	Ingress       cache.SharedIndexInformer
-	IngressClass  cache.SharedIndexInformer
-	EndpointSlice cache.SharedIndexInformer
-	Service       cache.SharedIndexInformer
-	Secret        cache.SharedIndexInformer
-	ConfigMap     cache.SharedIndexInformer
-	Namespace     cache.SharedIndexInformer
+	Ingress      cache.SharedIndexInformer
+	IngressClass cache.SharedIndexInformer
+	Endpoint     cache.SharedIndexInformer
+	Service      cache.SharedIndexInformer
+	Secret       cache.SharedIndexInformer
+	ConfigMap    cache.SharedIndexInformer
+	Namespace    cache.SharedIndexInformer
 }
 
 // Lister contains object listers (stores).
@@ -144,7 +140,7 @@ type Lister struct {
 	Ingress               IngressLister
 	IngressClass          IngressClassLister
 	Service               ServiceLister
-	EndpointSlice         EndpointSliceLister
+	Endpoint              EndpointLister
 	Secret                SecretLister
 	ConfigMap             ConfigMapLister
 	Namespace             NamespaceLister
@@ -162,7 +158,7 @@ func (e NotExistsError) Error() string {
 // Run initiates the synchronization of the informers against the API server.
 func (i *Informer) Run(stopCh chan struct{}) {
 	go i.Secret.Run(stopCh)
-	go i.EndpointSlice.Run(stopCh)
+	go i.Endpoint.Run(stopCh)
 	if i.IngressClass != nil {
 		go i.IngressClass.Run(stopCh)
 	}
@@ -172,6 +168,7 @@ func (i *Informer) Run(stopCh chan struct{}) {
 	// wait for all involved caches to be synced before processing items
 	// from the queue
 	if !cache.WaitForCacheSync(stopCh,
+		i.Endpoint.HasSynced,
 		i.Service.HasSynced,
 		i.Secret.HasSynced,
 		i.ConfigMap.HasSynced,
@@ -242,9 +239,7 @@ type k8sStore struct {
 	defaultSSLCertificate string
 }
 
-// New creates a new object store to be used in the ingress controller.
-//
-//nolint:gocyclo // Ignore function complexity error.
+// New creates a new object store to be used in the ingress controller
 func New(
 	namespace string,
 	namespaceSelector labels.Selector,
@@ -254,9 +249,8 @@ func New(
 	updateCh *channels.RingChannel,
 	disableCatchAll bool,
 	deepInspector bool,
-	icConfig *ingressclass.Configuration,
-	disableSyncEvents bool,
-) Storer {
+	icConfig *ingressclass.IngressClassConfiguration) Storer {
+
 	store := &k8sStore{
 		informers:             &Informer{},
 		listers:               &Lister{},
@@ -271,11 +265,9 @@ func New(
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
-	if !disableSyncEvents {
-		eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{
-			Interface: client.CoreV1().Events(namespace),
-		})
-	}
+	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{
+		Interface: client.CoreV1().Events(namespace),
+	})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{
 		Component: "nginx-ingress-controller",
 	})
@@ -292,7 +284,7 @@ func New(
 	// the memory consumption of nginx-ingress-controller explode.
 	// In order to avoid that we filter out labels OWNER=TILLER.
 	labelsTweakListOptionsFunc := func(options *metav1.ListOptions) {
-		if options.LabelSelector != "" {
+		if len(options.LabelSelector) > 0 {
 			options.LabelSelector += ",OWNER!=TILLER"
 		} else {
 			options.LabelSelector = "OWNER!=TILLER"
@@ -337,8 +329,8 @@ func New(
 		store.listers.IngressClass.Store = cache.NewStore(cache.MetaNamespaceKeyFunc)
 	}
 
-	store.informers.EndpointSlice = infFactory.Discovery().V1().EndpointSlices().Informer()
-	store.listers.EndpointSlice.Store = store.informers.EndpointSlice.GetStore()
+	store.informers.Endpoint = infFactory.Core().V1().Endpoints().Informer()
+	store.listers.Endpoint.Store = store.informers.Endpoint.GetStore()
 
 	store.informers.Secret = infFactorySecrets.Core().V1().Secrets().Informer()
 	store.listers.Secret.Store = store.informers.Secret.GetStore()
@@ -409,10 +401,7 @@ func New(
 			return
 		}
 
-		if err := store.listers.IngressWithAnnotation.Delete(ing); err != nil {
-			klog.ErrorS(err, "Error while deleting ingress from store", "ingress", klog.KObj(ing))
-			return
-		}
+		store.listers.IngressWithAnnotation.Delete(ing)
 
 		key := k8s.MetaNamespaceKey(ing)
 		store.secretIngressMap.Delete(key)
@@ -476,8 +465,7 @@ func New(
 				_, errOld = store.GetIngressClass(oldIng, icConfig)
 				classCur, errCur = store.GetIngressClass(curIng, icConfig)
 			}
-			switch {
-			case errOld != nil && errCur == nil:
+			if errOld != nil && errCur == nil {
 				if hasCatchAllIngressRule(curIng.Spec) && disableCatchAll {
 					klog.InfoS("ignoring update for catch-all ingress because of --disable-catch-all", "ingress", klog.KObj(curIng))
 					return
@@ -485,11 +473,11 @@ func New(
 
 				klog.InfoS("creating ingress", "ingress", klog.KObj(curIng), "ingressclass", classCur)
 				recorder.Eventf(curIng, corev1.EventTypeNormal, "Sync", "Scheduled for sync")
-			case errOld == nil && errCur != nil:
+			} else if errOld == nil && errCur != nil {
 				klog.InfoS("removing ingress because of unknown ingressclass", "ingress", klog.KObj(curIng))
 				ingDeleteHandler(old)
 				return
-			case errCur == nil && !reflect.DeepEqual(old, cur):
+			} else if errCur == nil && !reflect.DeepEqual(old, cur) {
 				if hasCatchAllIngressRule(curIng.Spec) && disableCatchAll {
 					klog.InfoS("ignoring update for catch-all ingress and delete old one because of --disable-catch-all", "ingress", klog.KObj(curIng))
 					ingDeleteHandler(old)
@@ -497,7 +485,7 @@ func New(
 				}
 
 				recorder.Eventf(curIng, corev1.EventTypeNormal, "Sync", "Scheduled for sync")
-			default:
+			} else {
 				klog.V(3).InfoS("No changes on ingress. Skipping update", "ingress", klog.KObj(curIng))
 				return
 			}
@@ -522,10 +510,7 @@ func New(
 
 	ingressClassEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			ingressclass, ok := obj.(*networkingv1.IngressClass)
-			if !ok {
-				klog.Errorf("unexpected type: %T", obj)
-			}
+			ingressclass := obj.(*networkingv1.IngressClass)
 			foundClassByName := false
 			if icConfig.IngressClassByName && ingressclass.Name == icConfig.AnnotationValue {
 				klog.InfoS("adding ingressclass as ingress-class-by-name is configured", "ingressclass", klog.KObj(ingressclass))
@@ -547,10 +532,7 @@ func New(
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			ingressclass, ok := obj.(*networkingv1.IngressClass)
-			if !ok {
-				klog.Errorf("unexpected type: %T", obj)
-			}
+			ingressclass := obj.(*networkingv1.IngressClass)
 			if ingressclass.Spec.Controller != icConfig.Controller {
 				klog.InfoS("ignoring ingressclass as the spec.controller is not the same of this ingress", "ingressclass", klog.KObj(ingressclass))
 				return
@@ -566,14 +548,8 @@ func New(
 			}
 		},
 		UpdateFunc: func(old, cur interface{}) {
-			oic, ok := old.(*networkingv1.IngressClass)
-			if !ok {
-				klog.Errorf("unexpected type: %T", old)
-			}
-			cic, ok := cur.(*networkingv1.IngressClass)
-			if !ok {
-				klog.Errorf("unexpected type: %T", cur)
-			}
+			oic := old.(*networkingv1.IngressClass)
+			cic := cur.(*networkingv1.IngressClass)
 			if cic.Spec.Controller != icConfig.Controller {
 				klog.InfoS("ignoring ingressclass as the spec.controller is not the same of this ingress", "ingressclass", klog.KObj(cic))
 				return
@@ -596,10 +572,7 @@ func New(
 
 	secrEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			sec, ok := obj.(*corev1.Secret)
-			if !ok {
-				klog.Errorf("unexpected type: %T", obj)
-			}
+			sec := obj.(*corev1.Secret)
 			key := k8s.MetaNamespaceKey(sec)
 
 			if store.defaultSSLCertificate == key {
@@ -626,10 +599,7 @@ func New(
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
-				sec, ok := cur.(*corev1.Secret)
-				if !ok {
-					klog.Errorf("unexpected type: %T", cur)
-				}
+				sec := cur.(*corev1.Secret)
 				key := k8s.MetaNamespaceKey(sec)
 
 				if !watchedNamespace(sec.Namespace) {
@@ -702,7 +672,7 @@ func New(
 		},
 	}
 
-	epsEventHandler := cache.ResourceEventHandlerFuncs{
+	epEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			updateCh.In() <- Event{
 				Type: CreateEvent,
@@ -716,15 +686,9 @@ func New(
 			}
 		},
 		UpdateFunc: func(old, cur interface{}) {
-			oeps, ok := old.(*discoveryv1.EndpointSlice)
-			if !ok {
-				klog.Errorf("unexpected type: %T", old)
-			}
-			ceps, ok := cur.(*discoveryv1.EndpointSlice)
-			if !ok {
-				klog.Errorf("unexpected type: %T", cur)
-			}
-			if !reflect.DeepEqual(ceps.Endpoints, oeps.Endpoints) {
+			oep := old.(*corev1.Endpoints)
+			cep := cur.(*corev1.Endpoints)
+			if !reflect.DeepEqual(cep.Subsets, oep.Subsets) {
 				updateCh.In() <- Event{
 					Type: UpdateEvent,
 					Obj:  cur,
@@ -733,6 +697,7 @@ func New(
 		},
 	}
 
+	// TODO: add e2e test to verify that changes to one or more configmap trigger an update
 	changeTriggerUpdate := func(name string) bool {
 		return name == configmap || name == tcp || name == udp
 	}
@@ -777,10 +742,7 @@ func New(
 
 	cmEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			cfgMap, ok := obj.(*corev1.ConfigMap)
-			if !ok {
-				klog.Errorf("unexpected type: %T", obj)
-			}
+			cfgMap := obj.(*corev1.ConfigMap)
 			key := k8s.MetaNamespaceKey(cfgMap)
 			handleCfgMapEvent(key, cfgMap, "CREATE")
 		},
@@ -789,10 +751,7 @@ func New(
 				return
 			}
 
-			cfgMap, ok := cur.(*corev1.ConfigMap)
-			if !ok {
-				klog.Errorf("unexpected type: %T", cur)
-			}
+			cfgMap := cur.(*corev1.ConfigMap)
 			key := k8s.MetaNamespaceKey(cfgMap)
 			handleCfgMapEvent(key, cfgMap, "UPDATE")
 		},
@@ -800,10 +759,7 @@ func New(
 
 	serviceHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			svc, ok := obj.(*corev1.Service)
-			if !ok {
-				klog.Errorf("unexpected type: %T", obj)
-			}
+			svc := obj.(*corev1.Service)
 			if svc.Spec.Type == corev1.ServiceTypeExternalName {
 				updateCh.In() <- Event{
 					Type: CreateEvent,
@@ -812,10 +768,7 @@ func New(
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			svc, ok := obj.(*corev1.Service)
-			if !ok {
-				klog.Errorf("unexpected type: %T", obj)
-			}
+			svc := obj.(*corev1.Service)
 			if svc.Spec.Type == corev1.ServiceTypeExternalName {
 				updateCh.In() <- Event{
 					Type: DeleteEvent,
@@ -824,14 +777,8 @@ func New(
 			}
 		},
 		UpdateFunc: func(old, cur interface{}) {
-			oldSvc, ok := old.(*corev1.Service)
-			if !ok {
-				klog.Errorf("unexpected type: %T", old)
-			}
-			curSvc, ok := cur.(*corev1.Service)
-			if !ok {
-				klog.Errorf("unexpected type: %T", cur)
-			}
+			oldSvc := old.(*corev1.Service)
+			curSvc := cur.(*corev1.Service)
 
 			if reflect.DeepEqual(oldSvc, curSvc) {
 				return
@@ -844,32 +791,17 @@ func New(
 		},
 	}
 
-	if _, err := store.informers.Ingress.AddEventHandler(ingEventHandler); err != nil {
-		klog.Errorf("Error adding ingress event handler: %v", err)
-	}
+	store.informers.Ingress.AddEventHandler(ingEventHandler)
 	if !icConfig.IgnoreIngressClass {
-		if _, err := store.informers.IngressClass.AddEventHandler(ingressClassEventHandler); err != nil {
-			klog.Errorf("Error adding ingress class event handler: %v", err)
-		}
+		store.informers.IngressClass.AddEventHandler(ingressClassEventHandler)
 	}
-	if _, err := store.informers.EndpointSlice.AddEventHandler(epsEventHandler); err != nil {
-		klog.Errorf("Error adding endpoint slice event handler: %v", err)
-	}
-	if _, err := store.informers.Secret.AddEventHandler(secrEventHandler); err != nil {
-		klog.Errorf("Error adding secret event handler: %v", err)
-	}
-	if _, err := store.informers.ConfigMap.AddEventHandler(cmEventHandler); err != nil {
-		klog.Errorf("Error adding configmap event handler: %v", err)
-	}
-	if _, err := store.informers.Service.AddEventHandler(serviceHandler); err != nil {
-		klog.Errorf("Error adding service event handler: %v", err)
-	}
+	store.informers.Endpoint.AddEventHandler(epEventHandler)
+	store.informers.Secret.AddEventHandler(secrEventHandler)
+	store.informers.ConfigMap.AddEventHandler(cmEventHandler)
+	store.informers.Service.AddEventHandler(serviceHandler)
 
 	// do not wait for informers to read the configmap configuration
-	ns, name, err := k8s.ParseNameNS(configmap)
-	if err != nil {
-		klog.Errorf("unexpected error parsing name and ns: %v", err)
-	}
+	ns, name, _ := k8s.ParseNameNS(configmap)
 	cm, err := client.CoreV1().ConfigMaps(ns).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		klog.Warningf("Unexpected error reading configuration configmap: %v", err)
@@ -885,10 +817,10 @@ func hasCatchAllIngressRule(spec networkingv1.IngressSpec) bool {
 	return spec.DefaultBackend != nil
 }
 
-func checkBadAnnotationValue(annotationMap map[string]string, badwords string) error {
+func checkBadAnnotationValue(annotations map[string]string, badwords string) error {
 	arraybadWords := strings.Split(strings.TrimSpace(badwords), ",")
 
-	for annotation, value := range annotationMap {
+	for annotation, value := range annotations {
 		if strings.HasPrefix(annotation, fmt.Sprintf("%s/", parser.AnnotationsPrefix)) {
 			for _, forbiddenvalue := range arraybadWords {
 				if strings.Contains(value, forbiddenvalue) {
@@ -933,14 +865,9 @@ func (s *k8sStore) syncIngress(ing *networkingv1.Ingress) {
 
 	k8s.SetDefaultNGINXPathType(copyIng)
 
-	parsed, err := s.annotations.Extract(ing)
-	if err != nil {
-		klog.Error(err)
-		return
-	}
-	err = s.listers.IngressWithAnnotation.Update(&ingress.Ingress{
+	err := s.listers.IngressWithAnnotation.Update(&ingress.Ingress{
 		Ingress:           *copyIng,
-		ParsedAnnotations: parsed,
+		ParsedAnnotations: s.annotations.Extract(ing),
 	})
 	if err != nil {
 		klog.Error(err)
@@ -976,10 +903,8 @@ func (s *k8sStore) updateSecretIngressMap(ing *networkingv1.Ingress) {
 		"proxy-ssl-secret",
 		"secure-verify-ca-secret",
 	}
-
-	secConfig := s.GetSecurityConfiguration().AllowCrossNamespaceResources
 	for _, ann := range secretAnnotations {
-		secrKey, err := objectRefAnnotationNsKey(ann, ing, secConfig)
+		secrKey, err := objectRefAnnotationNsKey(ann, ing)
 		if err != nil && !errors.IsMissingAnnotations(err) {
 			klog.Errorf("error reading secret reference in annotation %q: %s", ann, err)
 			continue
@@ -995,9 +920,8 @@ func (s *k8sStore) updateSecretIngressMap(ing *networkingv1.Ingress) {
 
 // objectRefAnnotationNsKey returns an object reference formatted as a
 // 'namespace/name' key from the given annotation name.
-func objectRefAnnotationNsKey(ann string, ing *networkingv1.Ingress, allowCrossNamespace bool) (string, error) {
-	// We pass nil fields, as this is an internal process and we don't need to validate it.
-	annValue, err := parser.GetStringAnnotation(ann, ing, nil)
+func objectRefAnnotationNsKey(ann string, ing *networkingv1.Ingress) (string, error) {
+	annValue, err := parser.GetStringAnnotation(ann, ing)
 	if err != nil {
 		return "", err
 	}
@@ -1009,9 +933,6 @@ func objectRefAnnotationNsKey(ann string, ing *networkingv1.Ingress, allowCrossN
 
 	if secrNs == "" {
 		return fmt.Sprintf("%v/%v", ing.Namespace, secrName), nil
-	}
-	if !allowCrossNamespace && secrNs != ing.Namespace {
-		return "", fmt.Errorf("cross namespace secret is not supported")
 	}
 	return annValue, nil
 }
@@ -1047,7 +968,7 @@ func (s *k8sStore) GetService(key string) (*corev1.Service, error) {
 	return s.listers.Service.ByKey(key)
 }
 
-func (s *k8sStore) GetIngressClass(ing *networkingv1.Ingress, icConfig *ingressclass.Configuration) (string, error) {
+func (s *k8sStore) GetIngressClass(ing *networkingv1.Ingress, icConfig *ingressclass.IngressClassConfiguration) (string, error) {
 	// First we try ingressClassName
 	if !icConfig.IgnoreIngressClass && ing.Spec.IngressClassName != nil {
 		iclass, err := s.listers.IngressClass.ByKey(*ing.Spec.IngressClassName)
@@ -1058,11 +979,11 @@ func (s *k8sStore) GetIngressClass(ing *networkingv1.Ingress, icConfig *ingressc
 	}
 
 	// Then we try annotation
-	if class, ok := ing.GetAnnotations()[ingressclass.IngressKey]; ok {
-		if class != icConfig.AnnotationValue {
+	if ingressclass, ok := ing.GetAnnotations()[ingressclass.IngressKey]; ok {
+		if ingressclass != icConfig.AnnotationValue {
 			return "", fmt.Errorf("ingress class annotation is not equal to the expected by Ingress Controller")
 		}
-		return class, nil
+		return ingressclass, nil
 	}
 
 	// Then we accept if the WithoutClass is enabled
@@ -1103,10 +1024,7 @@ func (s *k8sStore) ListIngresses() []*ingress.Ingress {
 	// filter ingress rules
 	ingresses := make([]*ingress.Ingress, 0)
 	for _, item := range s.listers.IngressWithAnnotation.List() {
-		ing, ok := item.(*ingress.Ingress)
-		if !ok {
-			klog.Errorf("unexpected type: %T", item)
-		}
+		ing := item.(*ingress.Ingress)
 		ingresses = append(ingresses, ing)
 	}
 
@@ -1125,8 +1043,9 @@ func (s *k8sStore) GetConfigMap(key string) (*corev1.ConfigMap, error) {
 	return s.listers.ConfigMap.ByKey(key)
 }
 
-func (s *k8sStore) GetServiceEndpointsSlices(key string) ([]*discoveryv1.EndpointSlice, error) {
-	return s.listers.EndpointSlice.MatchByKey(key)
+// GetServiceEndpoints returns the Endpoints of a Service matching key.
+func (s *k8sStore) GetServiceEndpoints(key string) (*corev1.Endpoints, error) {
+	return s.listers.Endpoint.ByKey(key)
 }
 
 // GetAuthCertificate is used by the auth-tls annotations to get a cert from a secret
@@ -1190,17 +1109,6 @@ func (s *k8sStore) GetBackendConfiguration() ngx_config.Configuration {
 	return s.backendConfig
 }
 
-func (s *k8sStore) GetSecurityConfiguration() defaults.SecurityConfiguration {
-	s.backendConfigMu.RLock()
-	defer s.backendConfigMu.RUnlock()
-
-	secConfig := defaults.SecurityConfiguration{
-		AllowCrossNamespaceResources: s.backendConfig.AllowCrossNamespaceResources,
-		AnnotationsRiskLevel:         s.backendConfig.AnnotationsRiskLevel,
-	}
-	return secConfig
-}
-
 func (s *k8sStore) setConfig(cmap *corev1.ConfigMap) {
 	s.backendConfigMu.Lock()
 	defer s.backendConfigMu.Unlock()
@@ -1215,7 +1123,7 @@ func (s *k8sStore) setConfig(cmap *corev1.ConfigMap) {
 		s.backendConfig.UseGeoIP2 = false
 	}
 
-	s.writeSSLSessionTicketKey(cmap, "/etc/ingress-controller/tickets.key")
+	s.writeSSLSessionTicketKey(cmap, "/etc/nginx/tickets.key")
 }
 
 // Run initiates the synchronization of the informers and the initial
@@ -1228,7 +1136,7 @@ func (s *k8sStore) Run(stopCh chan struct{}) {
 var runtimeScheme = k8sruntime.NewScheme()
 
 func init() {
-	runtime.Must(networkingv1.AddToScheme(runtimeScheme))
+	utilruntime.Must(networkingv1.AddToScheme(runtimeScheme))
 }
 
 func toIngress(obj interface{}) (*networkingv1.Ingress, bool) {

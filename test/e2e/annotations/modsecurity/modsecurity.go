@@ -20,20 +20,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2"
-
+	"github.com/onsi/ginkgo"
 	"k8s.io/ingress-nginx/test/e2e/framework"
-)
-
-const (
-	modSecurityFooHost = "modsecurity.foo.com"
-	defaultSnippet     = `SecRuleEngine On
-		SecRequestBodyAccess On
-		SecAuditEngine RelevantOnly
-		SecAuditLogParts ABIJDEFHZ
-		SecAuditLog /dev/stdout
-		SecAuditLogType Serial
-		SecRule REQUEST_HEADERS:User-Agent \"block-ua\" \"log,deny,id:107,status:403,msg:\'UA blocked\'\"`
 )
 
 var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
@@ -44,7 +32,7 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should enable modsecurity", func() {
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
 		annotations := map[string]string{
@@ -62,7 +50,7 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should enable modsecurity with transaction ID and OWASP rules", func() {
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
 		annotations := map[string]string{
@@ -83,7 +71,7 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should disable modsecurity", func() {
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
 		annotations := map[string]string{
@@ -100,10 +88,7 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should enable modsecurity with snippet", func() {
-		disableSnippet := f.AllowSnippetConfiguration()
-		defer disableSnippet()
-
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
 		annotations := map[string]string{
@@ -123,11 +108,10 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 
 	ginkgo.It("should enable modsecurity without using 'modsecurity on;'", func() {
 		f.SetNginxConfigMapData(map[string]string{
-			"enable-modsecurity": "true",
-		},
+			"enable-modsecurity": "true"},
 		)
 
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
 		annotations := map[string]string{
@@ -146,11 +130,10 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 
 	ginkgo.It("should disable modsecurity using 'modsecurity off;'", func() {
 		f.SetNginxConfigMapData(map[string]string{
-			"enable-modsecurity": "true",
-		},
+			"enable-modsecurity": "true"},
 		)
 
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
 		annotations := map[string]string{
@@ -167,13 +150,16 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should enable modsecurity with snippet and block requests", func() {
-		disableSnippet := f.AllowSnippetConfiguration()
-		defer disableSnippet()
-
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
-		snippet := defaultSnippet
+		snippet := `SecRuleEngine On
+		SecRequestBodyAccess On
+		SecAuditEngine RelevantOnly
+		SecAuditLogParts ABIJDEFHZ
+		SecAuditLog /dev/stdout
+		SecAuditLogType Serial
+		SecRule REQUEST_HEADERS:User-Agent \"block-ua\" \"log,deny,id:107,status:403,msg:\'UA blocked\'\"`
 
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/enable-modsecurity":  "true",
@@ -200,13 +186,16 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should enable modsecurity globally and with modsecurity-snippet block requests", func() {
-		disableSnippet := f.AllowSnippetConfiguration()
-		defer disableSnippet()
-
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
-		snippet := defaultSnippet
+		snippet := `SecRuleEngine On
+		SecRequestBodyAccess On
+		SecAuditEngine RelevantOnly
+		SecAuditLogParts ABIJDEFHZ
+		SecAuditLog /dev/stdout
+		SecAuditLogType Serial
+		SecRule REQUEST_HEADERS:User-Agent \"block-ua\" \"log,deny,id:107,status:403,msg:\'UA blocked\'\"`
 
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/modsecurity-snippet": snippet,
@@ -233,16 +222,16 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should enable modsecurity when enable-owasp-modsecurity-crs is set to true", func() {
-		disableSnippet := f.AllowSnippetConfiguration()
-		defer disableSnippet()
-
-		f.UpdateNginxConfigMapData("enable-modsecurity", "true")
-		f.UpdateNginxConfigMapData("enable-owasp-modsecurity-crs", "true")
-
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
-		snippet := defaultSnippet
+		snippet := `SecRuleEngine On
+		SecRequestBodyAccess On
+		SecAuditEngine RelevantOnly
+		SecAuditLogParts ABIJDEFHZ
+		SecAuditLog /dev/stdout
+		SecAuditLogType Serial
+		SecRule REQUEST_HEADERS:User-Agent \"block-ua\" \"log,deny,id:107,status:403,msg:\'UA blocked\'\"`
 
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/modsecurity-snippet": snippet,
@@ -252,6 +241,11 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 		framework.Sleep()
 		ing := framework.NewSingleIngress(host, "/", host, nameSpace, framework.EchoService, 80, annotations)
 		f.EnsureIngress(ing)
+
+		f.SetNginxConfigMapData(map[string]string{
+			"enable-modsecurity":           "true",
+			"enable-owasp-modsecurity-crs": "true",
+		})
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
@@ -267,9 +261,7 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should enable modsecurity through the config map", func() {
-		disableSnippet := f.AllowSnippetConfiguration()
-		defer disableSnippet()
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
 		snippet := `SecRequestBodyAccess On
@@ -289,9 +281,12 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 		f.EnsureIngress(ing)
 
 		expectedComment := "SecRuleEngine On"
-		f.UpdateNginxConfigMapData("enable-modsecurity", "true")
-		f.UpdateNginxConfigMapData("enable-owasp-modsecurity-crs", "true")
-		f.UpdateNginxConfigMapData("modsecurity-snippet", expectedComment)
+
+		f.SetNginxConfigMapData(map[string]string{
+			"enable-modsecurity":           "true",
+			"enable-owasp-modsecurity-crs": "true",
+			"modsecurity-snippet":          expectedComment,
+		})
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
@@ -307,11 +302,8 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should enable modsecurity through the config map but ignore snippet as disabled by admin", func() {
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
-
-		f.UpdateNginxConfigMapData("annotations-risk-level", "Critical") // To enable snippet configurations
-		defer f.UpdateNginxConfigMapData("annotations-risk-level", "High")
 
 		snippet := `SecRequestBodyAccess On
 		SecAuditEngine RelevantOnly
@@ -352,10 +344,7 @@ var _ = framework.DescribeAnnotation("modsecurity owasp", func() {
 	})
 
 	ginkgo.It("should disable default modsecurity conf setting when modsecurity-snippet is specified", func() {
-		disableSnippet := f.AllowSnippetConfiguration()
-		defer disableSnippet()
-
-		host := modSecurityFooHost
+		host := "modsecurity.foo.com"
 		nameSpace := f.Namespace
 
 		snippet := `SecRuleEngine On

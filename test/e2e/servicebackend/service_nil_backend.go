@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 	corev1 "k8s.io/api/core/v1"
 	networking "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,6 +64,7 @@ var _ = framework.IngressNginxDescribe("[Service] Nil Service Backend", func() {
 			WithHeader("Host", invalidHost).
 			Expect().
 			Status(http.StatusNotFound)
+
 	})
 })
 

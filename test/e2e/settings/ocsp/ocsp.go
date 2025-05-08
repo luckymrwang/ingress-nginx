@@ -28,13 +28,12 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/ocsp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"k8s.io/ingress-nginx/test/e2e/framework"
@@ -53,10 +52,6 @@ var _ = framework.DescribeSetting("OCSP", func() {
 		f.UpdateNginxConfigMapData("enable-ocsp", "true")
 
 		err := prepareCertificates(f.Namespace)
-		if err != nil {
-			ginkgo.By(fmt.Sprintf("Prepare Certs error %v", err.Error()))
-		}
-
 		assert.Nil(ginkgo.GinkgoT(), err)
 
 		ing := framework.NewSingleIngressWithTLS(host, "/", host, []string{host}, f.Namespace, framework.EchoService, 80, nil)
@@ -73,7 +68,7 @@ var _ = framework.DescribeSetting("OCSP", func() {
 
 		var pemCertBuffer bytes.Buffer
 		pemCertBuffer.Write(leafCert)
-		pemCertBuffer.WriteString("\n")
+		pemCertBuffer.Write([]byte("\n"))
 		pemCertBuffer.Write(intermediateCa)
 
 		f.EnsureSecret(&corev1.Secret{
@@ -90,7 +85,7 @@ var _ = framework.DescribeSetting("OCSP", func() {
 		cfsslDB, err := os.ReadFile("empty.db")
 		assert.Nil(ginkgo.GinkgoT(), err)
 
-		f.EnsureConfigMap(&corev1.ConfigMap{
+		cmap, err := f.EnsureConfigMap(&corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ocspserve",
 				Namespace: f.Namespace,
@@ -100,6 +95,8 @@ var _ = framework.DescribeSetting("OCSP", func() {
 				"db-config.json": []byte(`{"driver":"sqlite3","data_source":"/data/empty.db"}`),
 			},
 		})
+		assert.Nil(ginkgo.GinkgoT(), err)
+		assert.NotNil(ginkgo.GinkgoT(), cmap)
 
 		d, s := ocspserveDeployment(f.Namespace)
 		f.EnsureDeployment(d)
@@ -108,9 +105,8 @@ var _ = framework.DescribeSetting("OCSP", func() {
 		err = framework.WaitForEndpoints(f.KubeClientSet, framework.DefaultTimeout, "ocspserve", f.Namespace, 1)
 		assert.Nil(ginkgo.GinkgoT(), err, "waiting for endpoints to become ready")
 
-		f.WaitForLuaConfiguration(func(jsonCfg map[string]interface{}) bool {
-			val, ok, err := unstructured.NestedBool(jsonCfg, "enable_ocsp")
-			return err == nil && ok && val
+		f.WaitForNginxConfiguration(func(cfg string) bool {
+			return strings.Contains(cfg, "certificate.is_ocsp_stapling_enabled = true")
 		})
 
 		f.WaitForNginxServer(host,
@@ -118,7 +114,7 @@ var _ = framework.DescribeSetting("OCSP", func() {
 				return strings.Contains(server, fmt.Sprintf(`server_name %v`, host))
 			})
 
-		tlsConfig := &tls.Config{ServerName: host, InsecureSkipVerify: true} //nolint:gosec // Ignore the gosec error in testing
+		tlsConfig := &tls.Config{ServerName: host, InsecureSkipVerify: true}
 		f.HTTPTestClientWithTLSConfig(tlsConfig).
 			GET("/").
 			WithURL(f.GetURL(framework.HTTPS)).
@@ -201,8 +197,7 @@ const configTemplate = `
 
 func prepareCertificates(namespace string) error {
 	config := fmt.Sprintf(configTemplate, namespace)
-	//nolint:gosec // Not change permission to avoid possible issues
-	err := os.WriteFile("cfssl_config.json", []byte(config), 0o644)
+	err := os.WriteFile("cfssl_config.json", []byte(config), 0644)
 	if err != nil {
 		return fmt.Errorf("creating cfssl_config.json file: %v", err)
 	}
@@ -297,7 +292,7 @@ func ocspserveDeployment(namespace string) (*appsv1.Deployment, *corev1.Service)
 						Containers: []corev1.Container{
 							{
 								Name:  name,
-								Image: "registry.k8s.io/ingress-nginx/cfssl:v1.1.2@sha256:fd43e7671a6c0338c0f3fe60866d58baef6baa7c13254d788b7180d215b4d933",
+								Image: "k8s.gcr.io/ingress-nginx/e2e-test-cfssl@sha256:be2f69024f7b7053f35b86677de16bdaa5d3ff0f81b17581ef0b0c6804188b03",
 								Command: []string{
 									"/bin/bash",
 									"-c",

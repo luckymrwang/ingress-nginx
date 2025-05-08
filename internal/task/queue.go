@@ -28,7 +28,9 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-var keyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
+var (
+	keyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
+)
 
 // Queue manages a time work queue through an independent worker that invokes the
 // given sync function for every work item inserted.
@@ -36,7 +38,7 @@ var keyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
 // which timestamp is older than the last successful get operation.
 type Queue struct {
 	// queue is the work queue the worker polls
-	queue workqueue.TypedRateLimitingInterface[any]
+	queue workqueue.RateLimitingInterface
 	// sync is called for each item in the queue
 	sync func(interface{}) error
 	// workerDone is closed when the worker exits
@@ -115,10 +117,7 @@ func (t *Queue) worker() {
 		}
 		ts := time.Now().UnixNano()
 
-		item, ok := key.(Element)
-		if !ok {
-			klog.ErrorS(nil, "invalid item type", "key", key)
-		}
+		item := key.(Element)
 		if item.Timestamp != 0 && t.lastSync > item.Timestamp {
 			klog.V(3).InfoS("skipping sync", "key", item.Key, "last", t.lastSync, "now", item.Timestamp)
 			t.queue.Forget(key)
@@ -169,10 +168,10 @@ func NewTaskQueue(syncFn func(interface{}) error) *Queue {
 	return NewCustomTaskQueue(syncFn, nil)
 }
 
-// NewCustomTaskQueue creates a new custom task queue with the given sync function.
+// NewCustomTaskQueue ...
 func NewCustomTaskQueue(syncFn func(interface{}) error, fn func(interface{}) (interface{}, error)) *Queue {
 	q := &Queue{
-		queue:      workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[any]()),
+		queue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		sync:       syncFn,
 		workerDone: make(chan bool),
 		fn:         fn,

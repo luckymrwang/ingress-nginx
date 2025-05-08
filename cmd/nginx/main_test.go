@@ -33,8 +33,6 @@ import (
 	"k8s.io/ingress-nginx/internal/ingress/controller"
 	"k8s.io/ingress-nginx/internal/k8s"
 	"k8s.io/ingress-nginx/internal/nginx"
-	ingressflags "k8s.io/ingress-nginx/pkg/flags"
-	"k8s.io/ingress-nginx/pkg/util/process"
 )
 
 func TestCreateApiserverClient(t *testing.T) {
@@ -47,7 +45,7 @@ func TestCreateApiserverClient(t *testing.T) {
 func init() {
 	// the default value of nginx.TemplatePath assumes the template exists in
 	// the root filesystem and not in the rootfs directory
-	path, err := filepath.Abs(filepath.Join("..", "..", "rootfs", nginx.TemplatePath))
+	path, err := filepath.Abs(filepath.Join("../../rootfs/", nginx.TemplatePath))
 	if err == nil {
 		nginx.TemplatePath = path
 	}
@@ -85,21 +83,21 @@ func TestHandleSigterm(t *testing.T) {
 		t.Fatalf("error creating pod %v: %v", pod, err)
 	}
 
-	ingressflags.ResetForTesting(func() { t.Fatal("bad parse") })
+	resetForTesting(func() { t.Fatal("bad parse") })
 
-	t.Setenv("POD_NAME", podName)
-	t.Setenv("POD_NAMESPACE", namespace)
+	os.Setenv("POD_NAME", podName)
+	os.Setenv("POD_NAMESPACE", namespace)
 
 	oldArgs := os.Args
 
 	defer func() {
-		t.Setenv("POD_NAME", "")
-		t.Setenv("POD_NAMESPACE", "")
+		os.Setenv("POD_NAME", "")
+		os.Setenv("POD_NAMESPACE", "")
 		os.Args = oldArgs
 	}()
 
 	os.Args = []string{"cmd", "--default-backend-service", "ingress-nginx/default-backend-http", "--http-port", "0", "--https-port", "0"}
-	_, conf, err := ingressflags.ParseFlags()
+	_, conf, err := parseFlags()
 	if err != nil {
 		t.Errorf("Unexpected error creating NGINX controller: %v", err)
 	}
@@ -107,7 +105,7 @@ func TestHandleSigterm(t *testing.T) {
 
 	ngx := controller.NewNGINXController(conf, nil)
 
-	go process.HandleSigterm(ngx, 10, func(code int) {
+	go handleSigterm(ngx, 10, func(code int) {
 		if code != 1 {
 			t.Errorf("Expected exit code 1 but %d received", code)
 		}

@@ -50,19 +50,12 @@ export TAG=1.0.0-dev
 export ARCH=${ARCH:-amd64}
 export REGISTRY=ingress-controller
 
-BASEDIR=$(dirname "$0")
-NGINX_BASE_IMAGE=$(cat $BASEDIR/../../NGINX_BASE)
-
-echo "Running e2e with nginx base image ${NGINX_BASE_IMAGE}"
-
-export NGINX_BASE_IMAGE=$NGINX_BASE_IMAGE
-
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/kind-config-$KIND_CLUSTER_NAME}"
 
 if [ "${SKIP_CLUSTER_CREATION:-false}" = "false" ]; then
   echo "[dev-env] creating Kubernetes cluster with kind"
 
-  export K8S_VERSION=${K8S_VERSION:-v1.32.3@sha256:b36e76b4ad37b88539ce5e07425f77b29f73a8eaaebf3f1a8bc9c764401d118c}
+  export K8S_VERSION=${K8S_VERSION:-v1.21.1@sha256:69860bda5563ac81e3c0057d654b5253219618a22ec3a346306239bba8cfa1a6}
 
   kind create cluster \
     --verbosity=${KIND_LOG_LEVEL} \
@@ -78,41 +71,26 @@ fi
 
 if [ "${SKIP_IMAGE_CREATION:-false}" = "false" ]; then
   if ! command -v ginkgo &> /dev/null; then
-    go install github.com/onsi/ginkgo/v2/ginkgo@v2.23.4
+    go get github.com/onsi/ginkgo/ginkgo@v1.16.4
   fi
   echo "[dev-env] building image"
   make -C ${DIR}/../../ clean-image build image
 fi
-
+  
 
 KIND_WORKERS=$(kind get nodes --name="${KIND_CLUSTER_NAME}" | awk '{printf (NR>1?",":"") $1}')
 echo "[dev-env] copying docker images to cluster..."
 
 kind load docker-image --name="${KIND_CLUSTER_NAME}" --nodes=${KIND_WORKERS} ${REGISTRY}/controller:${TAG}
 
-if [ "${SKIP_CERT_MANAGER_CREATION:-false}" = "false" ]; then
-  echo "[dev-env] deploying cert-manager..."
-
-  # Get OS & platform for downloading cmctl.
-  os="$(uname -o | tr "[:upper:]" "[:lower:]" | sed "s/gnu\///")"
-  platform="$(uname -m | sed "s/aarch64/arm64/;s/x86_64/amd64/")"
-
-  # Download cmctl. Cannot validate checksum as OS & platform may vary.
-  curl --fail --location "https://github.com/cert-manager/cmctl/releases/download/v2.1.1/cmctl_${os}_${platform}.tar.gz" | tar --extract --gzip cmctl
-
-  # Install cert-manager.
-  ./cmctl x install
-  ./cmctl check api --wait 1m
-fi
-
 echo "[dev-env] running helm chart e2e tests..."
-docker run \
-  --name ct \
-  --volume "${KUBECONFIG}:/root/.kube/config:ro" \
-  --volume "${DIR}/../../:/workdir" \
-  --network host \
-  --workdir /workdir \
-  --entrypoint ct \
-  --rm \
-  registry.k8s.io/ingress-nginx/e2e-test-runner:v1.3.1@sha256:e5342d52e2eb6459483b9538b3456d67b3b15e4c55eb9f67993b55ed2ed61901 \
-    install --charts charts/ingress-nginx
+# Uses a custom chart-testing image to avoid timeouts waiting for namespace deletion.
+# The changes can be found here: https://github.com/aledbf/chart-testing/commit/41fe0ae0733d0c9a538099fb3cec522e888e3d82
+docker run --rm --interactive --network host \
+    --name ct \
+    --volume $KUBECONFIG:/root/.kube/config \
+    --volume "${DIR}/../../":/workdir \
+    --workdir /workdir \
+    aledbf/chart-testing:v3.3.1-next ct install \
+        --charts charts/ingress-nginx \
+        --helm-extra-args "--timeout 60s"

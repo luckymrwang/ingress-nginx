@@ -33,11 +33,11 @@ func logger(address string) {
 	server.SetFormat(syslog.RFC3164)
 	server.SetHandler(handler)
 	if err := server.ListenUDP(address); err != nil {
-		klog.Fatalf("failed bind internal syslog: %s", err.Error())
+		klog.Fatalf("failed bind internal syslog: %w", err)
 	}
 
 	if err := server.Boot(); err != nil {
-		klog.Fatalf("failed to boot internal syslog: %s", err.Error())
+		klog.Fatalf("failed to boot internal syslog: %w", err)
 	}
 	klog.Infof("Is Chrooted, starting logger")
 
@@ -47,4 +47,5 @@ func logger(address string) {
 
 	server.Wait()
 	klog.Infof("Stopping logger")
+
 }
