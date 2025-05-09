@@ -24,13 +24,13 @@ import (
 	"time"
 
 	"github.com/mitchellh/hashstructure"
+	ngconfparser "github.com/tufanbarisyildirim/gonginx/parser"
 	apiv1 "k8s.io/api/core/v1"
 	networking "k8s.io/api/networking/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
-	ngconfparser "github.com/tufanbarisyildirim/gonginx/parser"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-nginx/internal/ingress"
@@ -337,7 +337,7 @@ func (n *NGINXController) CheckIngress(ing *networking.Ingress) error {
 
 	/*Deactivated to mitigate CVE-2025-1974*/
 	/*use pure go to check nginx.conf instead of  nginx -t --start*/
-	ngconfparserInstance := ngconfparser.NewStringParser(string(content))
+	ngconfparserInstance := ngconfparser.NewStringParser(string(content), ngconfparser.WithSkipValidDirectivesErr())
 	_, err = ngconfparserInstance.Parse()
 	if err != nil {
 		n.metricCollector.IncCheckErrorCount(ing.Namespace, ing.Name)
